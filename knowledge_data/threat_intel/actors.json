@@ -1,0 +1,1602 @@
+{
+  "actors": [
+    {
+      "id": "G0007",
+      "name": "APT28",
+      "aliases": [
+        "Fancy Bear",
+        "Sofacy",
+        "Sednit",
+        "Pawn Storm",
+        "STRONTIUM"
+      ],
+      "country": "俄罗斯",
+      "motivation": "政治情报收集、军事目标",
+      "target_industries": [
+        "政府",
+        "军队",
+        "国防",
+        "媒体",
+        "外交",
+        "能源"
+      ],
+      "target_countries": [
+        "美国",
+        "乌克兰",
+        "欧洲",
+        "格鲁吉亚"
+      ],
+      "first_seen": "2004",
+      "active": true,
+      "associated_malware": [
+        "CHOPSTICK",
+        "X-Agent",
+        "X-Tunnel",
+        "LoJax",
+        "Zebrocy"
+      ],
+      "associated_techniques": [
+        "T1566",
+        "T1059",
+        "T1003",
+        "T1071",
+        "T1041",
+        "T1204",
+        "T1027",
+        "T1114"
+      ],
+      "associated_cves": [
+        "CVE-2023-23397",
+        "CVE-2021-26855",
+        "CVE-2018-0824"
+      ],
+      "description": "APT28（又称Fancy Bear）是俄罗斯总参谋部主要情报局（GRU）下属的APT组织，主要针对政府、军队、国防承包商进行网络间谍活动，曾参与2016年美国大选干预、2020年SolarWinds之前的多起重大网络攻击事件。",
+      "references": [
+        "https://attack.mitre.org/groups/G0007",
+        "https://attack.mitre.org/groups/G0007/"
+      ]
+    },
+    {
+      "id": "G0016",
+      "name": "APT29",
+      "aliases": [
+        "Cozy Bear",
+        "The Dukes",
+        "COZYBEAR",
+        "Nobelium",
+        "Midnight Blizzard"
+      ],
+      "country": "俄罗斯",
+      "motivation": "情报收集、政治目的",
+      "target_industries": [
+        "政府",
+        "外交",
+        "智库",
+        "医疗",
+        "能源",
+        "IT"
+      ],
+      "target_countries": [
+        "美国",
+        "欧洲",
+        "北约成员国"
+      ],
+      "first_seen": "2008",
+      "active": true,
+      "associated_malware": [
+        "WellMess",
+        "WellMail",
+        "PowerDuke",
+        "SeaDuke",
+        "GoldMax",
+        "SUNBURST",
+        "TEARDROP"
+      ],
+      "associated_techniques": [
+        "T1566",
+        "T1195",
+        "T1071",
+        "T1059",
+        "T1003",
+        "T1218",
+        "T1574"
+      ],
+      "associated_cves": [
+        "CVE-2020-0688",
+        "CVE-2021-26855",
+        "CVE-2023-36884"
+      ],
+      "description": "APT29（又称Cozy Bear）是俄罗斯对外情报局（SVR）下属的APT组织，以高度隐蔽性著称。主导了2020年SolarWinds供应链攻击，通过SUNBURST后门入侵了数千个组织。",
+      "references": [
+        "https://attack.mitre.org/groups/G0016",
+        "https://attack.mitre.org/groups/G0016/"
+      ]
+    },
+    {
+      "id": "G0008",
+      "name": "APT32",
+      "aliases": [
+        "OceanLotus",
+        "SeaLotus",
+        "APT-C-00"
+      ],
+      "country": "中国",
+      "motivation": "情报收集",
+      "target_industries": [
+        "政府",
+        "外交",
+        "制造业",
+        "媒体",
+        "航运",
+        "IT"
+      ],
+      "target_countries": [
+        "越南",
+        "柬埔寨",
+        "菲律宾",
+        "老挝",
+        "东南亚",
+        "中国"
+      ],
+      "first_seen": "2012",
+      "active": true,
+      "associated_malware": [
+        "Denis",
+        "KerrDown",
+        "CobaltStrike"
+      ],
+      "associated_techniques": [
+        "T1566",
+        "T1059",
+        "T1071",
+        "T1005",
+        "T1105",
+        "T1027",
+        "T1204"
+      ],
+      "associated_cves": [],
+      "description": "APT32（又称OceanLotus）是一个针对东南亚政府和制造业的信息窃取组织，以鱼叉式钓鱼和社会工程学为主要攻击手段。",
+      "references": [
+        "https://attack.mitre.org/groups/G0008",
+        "https://attack.mitre.org/groups/G0008/"
+      ]
+    },
+    {
+      "id": "G0032",
+      "name": "Lazarus Group",
+      "aliases": [
+        "HIDDEN COBRA",
+        "APT38",
+        "Guardians of Peace",
+        "ZINC"
+      ],
+      "country": "朝鲜",
+      "motivation": "金融掠夺、破坏、情报收集",
+      "target_industries": [
+        "金融",
+        "加密货币",
+        "政府",
+        "国防",
+        "医疗",
+        "IT"
+      ],
+      "target_countries": [
+        "韩国",
+        "美国",
+        "全球"
+      ],
+      "first_seen": "2009",
+      "active": true,
+      "associated_malware": [
+        "WannaCry",
+        "HOPLIGHT",
+        "TYPEFRAME",
+        "ELECTRICFISH",
+        "Bankshot",
+        "Maui"
+      ],
+      "associated_techniques": [
+        "T1566",
+        "T1204",
+        "T1059",
+        "T1071",
+        "T1486",
+        "T1083",
+        "T1027",
+        "T1529"
+      ],
+      "associated_cves": [
+        "CVE-2017-0144",
+        "CVE-2021-44228",
+        "CVE-2022-22706"
+      ],
+      "description": "Lazarus Group是朝鲜侦察总局（RGB）下属的APT组织，以2017年WannaCry勒索软件攻击和多次针对银行、加密货币交易所的数亿美元金融盗窃闻名。",
+      "references": [
+        "https://attack.mitre.org/groups/G0032",
+        "https://attack.mitre.org/groups/G0032/"
+      ]
+    },
+    {
+      "id": "G0001",
+      "name": "APT1",
+      "aliases": [
+        "Comment Panda",
+        "PLA Unit 61398",
+        "BYZANCE"
+      ],
+      "country": "中国",
+      "motivation": "情报收集",
+      "target_industries": [
+        "政府",
+        "国防",
+        "航天",
+        "科技",
+        "工程",
+        "金融"
+      ],
+      "target_countries": [
+        "美国",
+        "加拿大",
+        "英国",
+        "法国",
+        "全球"
+      ],
+      "first_seen": "2003",
+      "active": false,
+      "associated_malware": [
+        "BISCUIT",
+        "FREELOADER",
+        "GREENCAT",
+        "PASSWORD",
+        "POISON IVY"
+      ],
+      "associated_techniques": [
+        "T1566",
+        "T1204",
+        "T1059",
+        "T1005",
+        "T1105",
+        "T1027",
+        "T1071"
+      ],
+      "associated_cves": [],
+      "description": "APT1（又称Comment Panda）是Mandiant在2013年披露的中国人民解放军61398部队下属APT组织，以长期针对美国国防承包商和科技公司的网络间谍活动闻名。",
+      "references": [
+        "https://attack.mitre.org/groups/G0001",
+        "https://attack.mitre.org/groups/G0001/"
+      ]
+    },
+    {
+      "id": "G0129",
+      "name": "UNC2452",
+      "aliases": [
+        "APT29",
+        "Nobelium",
+        "Midnight Blizzard"
+      ],
+      "country": "俄罗斯",
+      "motivation": "情报收集",
+      "target_industries": [
+        "政府",
+        "IT",
+        "电信",
+        "医疗",
+        "智库"
+      ],
+      "target_countries": [
+        "美国",
+        "欧洲",
+        "中东"
+      ],
+      "first_seen": "2020",
+      "active": true,
+      "associated_malware": [
+        "SUNBURST",
+        "TEARDROP",
+        "GoldMax",
+        "NativeZone"
+      ],
+      "associated_techniques": [
+        "T1195",
+        "T1071",
+        "T1059",
+        "T1574",
+        "T1105",
+        "T1027"
+      ],
+      "associated_cves": [
+        "CVE-2020-0688",
+        "CVE-2021-26855"
+      ],
+      "description": "UNC2452是与2020年SolarWinds供应链攻击相关的威胁组织，被归因于俄罗斯SVR。该组织通过感染SolarWinds Orion平台的合法更新机制，向全球约18,000个组织分发了SUNBURST后门。",
+      "references": [
+        "https://attack.mitre.org/groups/G0129/",
+        "https://www.mandiant.com/resources/unc2452-sunburst"
+      ]
+    },
+    {
+      "id": "G0040",
+      "name": "APT33",
+      "aliases": [
+        "Elfin",
+        "Magnallium",
+        "Refined Kitten"
+      ],
+      "country": "伊朗",
+      "motivation": "破坏、情报收集",
+      "target_industries": [
+        "航空",
+        "能源",
+        "国防",
+        "石化",
+        "政府"
+      ],
+      "target_countries": [
+        "美国",
+        "沙特阿拉伯",
+        "以色列",
+        "中东"
+      ],
+      "first_seen": "2013",
+      "active": true,
+      "associated_malware": [
+        "SHAPESHIFT",
+        "DROPSHOT",
+        "TURNEDUP",
+        "Powermeter"
+      ],
+      "associated_techniques": [
+        "T1566",
+        "T1059",
+        "T1071",
+        "T1485",
+        "T1027",
+        "T1204",
+        "T1082"
+      ],
+      "associated_cves": [],
+      "description": "APT33（又称Elfin）是伊朗伊斯兰革命卫队（IRGC）关联的APT组织，以针对航空和能源行业的破坏性攻击著称，曾使用擦除器和勒索软件进行攻击。",
+      "references": [
+        "https://attack.mitre.org/groups/G0040",
+        "https://attack.mitre.org/groups/G0040/"
+      ]
+    },
+    {
+      "id": "G0045",
+      "name": "APT37",
+      "aliases": [
+        "Reaper",
+        "Group123",
+        "ScarCruft"
+      ],
+      "country": "朝鲜",
+      "motivation": "情报收集、金融",
+      "target_industries": [
+        "政府",
+        "国防",
+        "金融",
+        "媒体",
+        "加密货币"
+      ],
+      "target_countries": [
+        "韩国",
+        "美国",
+        "日本"
+      ],
+      "first_seen": "2012",
+      "active": true,
+      "associated_malware": [
+        "BLUELIGHT",
+        "DOGCALL",
+        "KARMA",
+        "RokRAT",
+        "Freenki"
+      ],
+      "associated_techniques": [
+        "T1566",
+        "T1204",
+        "T1059",
+        "T1071",
+        "T1005",
+        "T1082",
+        "T1027"
+      ],
+      "associated_cves": [],
+      "description": "APT37（又称Reaper/ScarCruft）是朝鲜的APT组织，主要针对韩国政府、国防和金融领域进行情报收集，善于使用鱼叉式钓鱼邮件和社会工程学。",
+      "references": [
+        "https://attack.mitre.org/groups/G0045",
+        "https://attack.mitre.org/groups/G0045/"
+      ]
+    },
+    {
+      "id": "G0022",
+      "name": "APT3",
+      "aliases": [
+        "Gothic Panda",
+        "UPS",
+        "Pirpi",
+        "PANDORA"
+      ],
+      "country": "中国",
+      "motivation": "情报收集",
+      "target_industries": [
+        "国防",
+        "政府",
+        "科技",
+        "制造",
+        "工程"
+      ],
+      "target_countries": [
+        "美国",
+        "英国",
+        "日本",
+        "新加坡"
+      ],
+      "first_seen": "2006",
+      "active": true,
+      "associated_malware": [
+        "Mivast",
+        "Vedio",
+        "BackConfig",
+        "PoisonIvy"
+      ],
+      "associated_techniques": [
+        "T1566",
+        "T1071",
+        "T1059",
+        "T1105",
+        "T1005",
+        "T1012"
+      ],
+      "associated_cves": [],
+      "description": "APT3（又称Gothic Panda）是中国APT组织，以针对国防和科技行业的网络间谍活动闻名，曾多次利用零日漏洞和定制化恶意软件进行攻击。",
+      "references": [
+        "https://attack.mitre.org/groups/G0022",
+        "https://attack.mitre.org/groups/G0022/"
+      ]
+    },
+    {
+      "id": "G0025",
+      "name": "APT10",
+      "aliases": [
+        "MenuPass",
+        "Stone Panda",
+        "Red Apollo",
+        "CICADA"
+      ],
+      "country": "中国",
+      "motivation": "经济间谍、情报收集",
+      "target_industries": [
+        "国防",
+        "航天",
+        "科技",
+        "金融",
+        "法律",
+        "IT"
+      ],
+      "target_countries": [
+        "美国",
+        "日本",
+        "欧洲",
+        "印度"
+      ],
+      "first_seen": "2009",
+      "active": true,
+      "associated_malware": [
+        "PlugX",
+        "MuddyWater",
+        "CobaltStrike",
+        "Koadic"
+      ],
+      "associated_techniques": [
+        "T1566",
+        "T1059",
+        "T1071",
+        "T1105",
+        "T1003",
+        "T1027",
+        "T1082",
+        "T1204"
+      ],
+      "associated_cves": [],
+      "description": "APT10（又称MenuPass）是中国APT组织，以长期针对全球IT供应链和SaaS提供商进行攻击闻名。2017年NotPetya事件后被发现针对全球托管服务提供商（MSP）。",
+      "references": [
+        "https://attack.mitre.org/groups/G0025",
+        "https://attack.mitre.org/groups/G0025/"
+      ]
+    },
+    {
+      "id": "G0035",
+      "name": "FIN7",
+      "aliases": [
+        "Carbanak",
+        "Anunak",
+        "Carbon Spider",
+        "ELBRUS"
+      ],
+      "country": "俄罗斯",
+      "motivation": "金融获利",
+      "target_industries": [
+        "金融",
+        "酒店",
+        "零售",
+        "餐饮",
+        "POS支付"
+      ],
+      "target_countries": [
+        "美国",
+        "欧洲",
+        "澳大利亚"
+      ],
+      "first_seen": "2013",
+      "active": true,
+      "associated_malware": [
+        "Carbanak",
+        "CobaltStrike",
+        "BOOSTWRITE",
+        "GRIFFON"
+      ],
+      "associated_techniques": [
+        "T1566",
+        "T1204",
+        "T1059",
+        "T1071",
+        "T1005",
+        "T1486",
+        "T1027"
+      ],
+      "associated_cves": [],
+      "description": "FIN7（又称Carbanak）是俄罗斯网络犯罪集团，以针对全球金融和酒店业的POS系统攻击闻名，据估计已窃取超过10亿美元。该组织使用复杂的鱼叉式钓鱼和社会工程学手段。",
+      "references": [
+        "https://attack.mitre.org/groups/G0035",
+        "https://attack.mitre.org/groups/G0035/"
+      ]
+    },
+    {
+      "id": "G0114",
+      "name": "UNC1878",
+      "aliases": [
+        "CLOP",
+        "CL0P"
+      ],
+      "country": "俄罗斯",
+      "motivation": "勒索软件攻击（勒索获利）",
+      "target_industries": [
+        "金融",
+        "教育",
+        "医疗",
+        "政府",
+        "制造"
+      ],
+      "target_countries": [
+        "美国",
+        "欧洲",
+        "全球"
+      ],
+      "first_seen": "2019",
+      "active": true,
+      "associated_malware": [
+        "CLOP Ransomware",
+        "TrueBot",
+        "FlawedGrace",
+        "CobaltStrike"
+      ],
+      "associated_techniques": [
+        "T1566",
+        "T1190",
+        "T1486",
+        "T1071",
+        "T1059",
+        "T1027",
+        "T1041"
+      ],
+      "associated_cves": [
+        "CVE-2023-34362",
+        "CVE-2020-1472",
+        "CVE-2021-26855"
+      ],
+      "description": "CLOP勒索软件组织以利用零日漏洞进行大规模勒索攻击著称。2023年利用MOVEit Transfer的SQL注入漏洞（CVE-2023-34362）在全球范围内攻击了数千个组织。",
+      "references": [
+        "https://attack.mitre.org/groups/G0114/",
+        "https://www.cisa.gov/clop-ransomware"
+      ]
+    },
+    {
+      "id": "G0121",
+      "name": "LockBit",
+      "aliases": [
+        "LockBit Gang",
+        "LockBit RaaS"
+      ],
+      "country": "俄罗斯",
+      "motivation": "勒索软件即服务（RaaS）",
+      "target_industries": [
+        "金融",
+        "制造",
+        "政府",
+        "医疗",
+        "教育",
+        "科技"
+      ],
+      "target_countries": [
+        "美国",
+        "欧洲",
+        "全球"
+      ],
+      "first_seen": "2019",
+      "active": true,
+      "associated_malware": [
+        "LockBit",
+        "StealBit",
+        "CobaltStrike"
+      ],
+      "associated_techniques": [
+        "T1566",
+        "T1486",
+        "T1071",
+        "T1059",
+        "T1041",
+        "T1482",
+        "T1003",
+        "T1027",
+        "T1083"
+      ],
+      "associated_cves": [
+        "CVE-2023-27350"
+      ],
+      "description": "LockBit是当前最活跃的勒索软件即服务（RaaS）组织之一，以双重勒索策略（加密+泄露数据）闻名。LockBit 3.0版本是最新变种，采用了更复杂的逃避检测技术。",
+      "references": [
+        "https://attack.mitre.org/groups/G0121/",
+        "https://www.cisa.gov/lockbit-ransomware"
+      ]
+    },
+    {
+      "id": "G0048",
+      "name": "APT-C-23",
+      "aliases": [
+        "Two-Tailed Scorpion",
+        "AridViper",
+        "Mantis"
+      ],
+      "country": "巴勒斯坦",
+      "motivation": "情报收集",
+      "target_industries": [
+        "政府",
+        "军事",
+        "外交"
+      ],
+      "target_countries": [
+        "以色列",
+        "中东",
+        "埃及"
+      ],
+      "first_seen": "2013",
+      "active": true,
+      "associated_malware": [
+        "Micropsia",
+        "Desert Scorpion",
+        "Iron Tiger"
+      ],
+      "associated_techniques": [
+        "T1566",
+        "T1204",
+        "T1059",
+        "T1071",
+        "T1005",
+        "T1105"
+      ],
+      "associated_cves": [],
+      "description": "APT-C-23（又称Two-Tailed Scorpion）是巴勒斯坦的APT组织，长期针对以色列和中东地区的政府、军事目标进行网络间谍活动，以移动端恶意软件攻击见长。",
+      "references": [
+        "https://attack.mitre.org/groups/G0048",
+        "https://attack.mitre.org/groups/G0048/"
+      ]
+    },
+    {
+      "id": "G0059",
+      "name": "Magic Hound",
+      "aliases": [
+        "APT35",
+        "Charming Kitten",
+        "Phosphorus",
+        "NEWSCASTER"
+      ],
+      "country": "伊朗",
+      "motivation": "情报收集、影响力行动",
+      "target_industries": [
+        "政府",
+        "外交",
+        "学术",
+        "媒体",
+        "医疗",
+        "能源"
+      ],
+      "target_countries": [
+        "美国",
+        "以色列",
+        "中东",
+        "英国"
+      ],
+      "first_seen": "2011",
+      "active": true,
+      "associated_malware": [
+        "TURNEDUP",
+        "HYPERSCRAPE",
+        "SPLINTER",
+        "PowerShell"
+      ],
+      "associated_techniques": [
+        "T1566",
+        "T1204",
+        "T1059",
+        "T1071",
+        "T1005",
+        "T1082",
+        "T1114",
+        "T1027"
+      ],
+      "associated_cves": [
+        "CVE-2020-0688"
+      ],
+      "description": "APT35（又称Magic Hound/Charming Kitten）是伊朗伊斯兰革命卫队（IRGC）关联的APT组织，以鱼叉式钓鱼和社会工程学手段针对学术界、政界人士进行网络间谍活动。",
+      "references": [
+        "https://attack.mitre.org/groups/G0059",
+        "https://attack.mitre.org/groups/G0059/"
+      ]
+    },
+    {
+      "id": "G0140",
+      "name": "Scattered Spider",
+      "aliases": [
+        "UNC3944",
+        "Starfraught",
+        "0ktapus"
+      ],
+      "country": "美国/英国",
+      "motivation": "金融获利、数据窃取",
+      "target_industries": [
+        "金融",
+        "科技",
+        "电信",
+        "游戏",
+        "酒店"
+      ],
+      "target_countries": [
+        "美国",
+        "全球"
+      ],
+      "first_seen": "2022",
+      "active": true,
+      "associated_malware": [
+        "CobaltStrike",
+        "Mythic",
+        "Raccoon Stealer"
+      ],
+      "associated_techniques": [
+        "T1566",
+        "T1059",
+        "T1071",
+        "T1550",
+        "T1528",
+        "T1003",
+        "T1485",
+        "T1027"
+      ],
+      "associated_cves": [
+        "CVE-2023-27997"
+      ],
+      "description": "Scattered Spider（又称UNC3944）是一个以英语为母语的网络犯罪集团，以高度社会工程学手段（SIM swapping、MFA疲劳攻击）著称，擅长绕过身份验证机制进行勒索和数据窃取。",
+      "references": [
+        "https://attack.mitre.org/groups/G0140/",
+        "https://www.cisa.gov/scattered-spider"
+      ]
+    },
+    {
+      "id": "G0137",
+      "name": "ALPHV",
+      "aliases": [
+        "BlackCat",
+        "Noberus"
+      ],
+      "country": "俄罗斯",
+      "motivation": "勒索软件即服务（RaaS）",
+      "target_industries": [
+        "医疗",
+        "能源",
+        "制造",
+        "政府",
+        "金融",
+        "科技"
+      ],
+      "target_countries": [
+        "美国",
+        "欧洲",
+        "全球"
+      ],
+      "first_seen": "2021",
+      "active": true,
+      "associated_malware": [
+        "BlackCat Ransomware",
+        "CobaltStrike",
+        "Exfiltool"
+      ],
+      "associated_techniques": [
+        "T1566",
+        "T1486",
+        "T1071",
+        "T1059",
+        "T1041",
+        "T1003",
+        "T1027"
+      ],
+      "associated_cves": [],
+      "description": "ALPHV（又称BlackCat）是首个使用Rust编写的勒索软件即服务（RaaS）组织。BlackCat勒索软件是跨平台的，支持Windows、Linux和ESXi系统，以双重勒索和高额赎金闻名。",
+      "references": [
+        "https://attack.mitre.org/groups/G0137/",
+        "https://www.cisa.gov/alphv-ransomware"
+      ]
+    },
+    {
+      "id": "G0098",
+      "name": "APT39",
+      "aliases": [
+        "Chafer",
+        "Remix Kitten",
+        "ITG07"
+      ],
+      "country": "伊朗",
+      "motivation": "情报收集",
+      "target_industries": [
+        "电信",
+        "旅游",
+        "IT",
+        "政府"
+      ],
+      "target_countries": [
+        "中东",
+        "美国",
+        "欧洲"
+      ],
+      "first_seen": "2014",
+      "active": true,
+      "associated_malware": [
+        "POWRUNR",
+        "ASPXSpy",
+        "CobaltStrike"
+      ],
+      "associated_techniques": [
+        "T1566",
+        "T1059",
+        "T1071",
+        "T1105",
+        "T1082",
+        "T1027"
+      ],
+      "associated_cves": [],
+      "description": "APT39（又称Chafer）是伊朗情报安全部（MOIS）关联的APT组织，以针对全球电信和旅游行业进行情报收集而闻名，善于利用Web shell和定制化后门进行持久化。",
+      "references": [
+        "https://attack.mitre.org/groups/G0098",
+        "https://attack.mitre.org/groups/G0098/"
+      ]
+    },
+    {
+      "id": "G0012",
+      "name": "DarkHotel",
+      "aliases": [
+        "Tapaoux",
+        "APT-C-06"
+      ],
+      "country": "中国",
+      "motivation": "经济间谍、情报收集",
+      "target_industries": [
+        "政府",
+        "国防",
+        "科技",
+        "金融",
+        "法律",
+        "奢侈品"
+      ],
+      "target_countries": [
+        "中国",
+        "日本",
+        "韩国",
+        "东南亚"
+      ],
+      "first_seen": "2007",
+      "active": true,
+      "associated_malware": [
+        "DarkHotel",
+        "Tapaoux",
+        "HotCroissant"
+      ],
+      "associated_techniques": [
+        "T1566",
+        "T1204",
+        "T1059",
+        "T1071",
+        "T1105",
+        "T1005",
+        "T1027"
+      ],
+      "associated_cves": [],
+      "description": "DarkHotel是一个以酒店WiFi网络为攻击跳板的APT组织，专门针对入住高级酒店的企业高管和政府官员，通过感染酒店WiFi网络进行目标精准攻击。",
+      "references": [
+        "https://attack.mitre.org/groups/G0012",
+        "https://attack.mitre.org/groups/G0012/"
+      ]
+    },
+    {
+      "id": "G0036",
+      "name": "Wizard Spider",
+      "aliases": [
+        "Gold Blackburn",
+        "TrickBot Gang",
+        "UNC1878"
+      ],
+      "country": "俄罗斯",
+      "motivation": "金融获利",
+      "target_industries": [
+        "金融",
+        "医疗",
+        "政府",
+        "制造"
+      ],
+      "target_countries": [
+        "美国",
+        "欧洲",
+        "全球"
+      ],
+      "first_seen": "2016",
+      "active": true,
+      "associated_malware": [
+        "TrickBot",
+        "Conti",
+        "BazarLoader",
+        "Anchor"
+      ],
+      "associated_techniques": [
+        "T1566",
+        "T1204",
+        "T1059",
+        "T1071",
+        "T1486",
+        "T1003",
+        "T1027"
+      ],
+      "associated_cves": [],
+      "description": "Wizard Spider是俄罗斯网络犯罪集团，以开发TrickBot银行木马和运营Conti勒索软件闻名。该组织建立了从初始访问到勒索部署的完整犯罪产业链。",
+      "references": [
+        "https://attack.mitre.org/groups/G0036/",
+        "https://www.cisa.gov/wizard-spider"
+      ]
+    },
+    {
+      "id": "G0078",
+      "name": "TA505",
+      "aliases": [
+        "Graceful Spider",
+        "ITG10"
+      ],
+      "country": "俄罗斯",
+      "motivation": "金融获利、数据窃取",
+      "target_industries": [
+        "金融",
+        "医疗",
+        "零售",
+        "餐饮"
+      ],
+      "target_countries": [
+        "美国",
+        "欧洲",
+        "全球"
+      ],
+      "first_seen": "2014",
+      "active": true,
+      "associated_malware": [
+        "Dridex",
+        "Locky",
+        "FlawedAmmyy",
+        "ServHelper",
+        "FlawedGrace"
+      ],
+      "associated_techniques": [
+        "T1566",
+        "T1204",
+        "T1059",
+        "T1071",
+        "T1486",
+        "T1027",
+        "T1105"
+      ],
+      "associated_cves": [],
+      "description": "TA505（又称Graceful Spider）是一个俄罗斯网络犯罪集团，以大规模鱼叉式钓鱼邮件分发银行木马和勒索软件闻名，曾运营Dridex、Locky和FlawedAmmyy等知名恶意软件。",
+      "references": [
+        "https://attack.mitre.org/groups/G0078",
+        "https://attack.mitre.org/groups/G0078/"
+      ]
+    },
+    {
+      "id": "G0108",
+      "name": "Vicious Panda",
+      "aliases": [
+        "APT-C-60",
+        "PolarBear"
+      ],
+      "country": "中国",
+      "motivation": "情报收集",
+      "target_industries": [
+        "政府",
+        "国防",
+        "科技"
+      ],
+      "target_countries": [
+        "日本",
+        "韩国",
+        "台湾",
+        "东南亚"
+      ],
+      "first_seen": "2016",
+      "active": true,
+      "associated_malware": [
+        "BadTiger",
+        "Slingshot"
+      ],
+      "associated_techniques": [
+        "T1566",
+        "T1059",
+        "T1071",
+        "T1105",
+        "T1005",
+        "T1027"
+      ],
+      "associated_cves": [],
+      "description": "Vicious Panda（又称APT-C-60）以针对东亚国家政府机构的网络间谍活动闻名，善于使用鱼叉式钓鱼文档和合法工具进行Living-off-the-land攻击。",
+      "references": [
+        "https://attack.mitre.org/groups/G0108/"
+      ]
+    },
+    {
+      "id": "G0055",
+      "name": "MuddyWater",
+      "aliases": [
+        "SeedWorm",
+        "Temp.Zagros",
+        "MERCURY"
+      ],
+      "country": "伊朗",
+      "motivation": "情报收集、破坏",
+      "target_industries": [
+        "政府",
+        "国防",
+        "电信",
+        "石油",
+        "IT"
+      ],
+      "target_countries": [
+        "中东",
+        "土耳其",
+        "美国",
+        "欧洲"
+      ],
+      "first_seen": "2017",
+      "active": true,
+      "associated_malware": [
+        "POWERSTATS",
+        "Cannon",
+        "Kitten"
+      ],
+      "associated_techniques": [
+        "T1566",
+        "T1204",
+        "T1059",
+        "T1071",
+        "T1105",
+        "T1003",
+        "T1027",
+        "T1082"
+      ],
+      "associated_cves": [],
+      "description": "MuddyWater是伊朗情报安全部（MOIS）关联的APT组织，以PowerShell-based后门POWERSTATS闻名，长期针对中东和土耳其的政府和电信行业。",
+      "references": [
+        "https://attack.mitre.org/groups/G0055",
+        "https://attack.mitre.org/groups/G0055/"
+      ]
+    },
+    {
+      "id": "G0060",
+      "name": "BRONZE BUTLER",
+      "aliases": [
+        "Tick",
+        "APT-C-01",
+        "RedViper"
+      ],
+      "country": "中国",
+      "motivation": "经济间谍",
+      "target_industries": [
+        "政府",
+        "科技",
+        "制造",
+        "教育",
+        "金融"
+      ],
+      "target_countries": [
+        "日本",
+        "韩国",
+        "俄罗斯",
+        "中国台湾"
+      ],
+      "first_seen": "2006",
+      "active": true,
+      "associated_malware": [
+        "HTTPClient",
+        "Datper",
+        "Winnti"
+      ],
+      "associated_techniques": [
+        "T1566",
+        "T1059",
+        "T1071",
+        "T1105",
+        "T1003",
+        "T1027"
+      ],
+      "associated_cves": [],
+      "description": "BRONZE BUTLER（又称Tick）是长期针对日本、韩国等东亚国家的网络间谍组织，以工业间谍和经济情报窃取为主要目标，攻击手段包含鱼叉式钓鱼和供应链攻击。",
+      "references": [
+        "https://attack.mitre.org/groups/G0060",
+        "https://attack.mitre.org/groups/G0060/"
+      ]
+    },
+    {
+      "id": "G0062",
+      "name": "TA459",
+      "aliases": [
+        "APT40",
+        "Leviathan",
+        "Tempest",
+        "FLASH FLOOD"
+      ],
+      "country": "中国",
+      "motivation": "情报收集、经济间谍",
+      "target_industries": [
+        "政府",
+        "科技",
+        "航天",
+        "金融",
+        "媒体"
+      ],
+      "target_countries": [
+        "美国",
+        "欧洲",
+        "东南亚",
+        "澳大利亚"
+      ],
+      "first_seen": "2012",
+      "active": true,
+      "associated_malware": [
+        "Bisonal",
+        "PlugX",
+        "CobaltStrike"
+      ],
+      "associated_techniques": [
+        "T1566",
+        "T1059",
+        "T1071",
+        "T1105",
+        "T1005",
+        "T1027",
+        "T1082"
+      ],
+      "associated_cves": [],
+      "description": "APT40（又称Leviathan）是中国APT组织，以针对航天、科技和金融领域的情报收集活动闻名。2019年英国NSCS公开指责该组织针对新冠疫情研究机构进行攻击。",
+      "references": [
+        "https://attack.mitre.org/groups/G0062",
+        "https://attack.mitre.org/groups/G0062/"
+      ]
+    },
+    {
+      "id": "G0096",
+      "name": "APT41",
+      "aliases": [
+        "Winnti",
+        "BISMUTH",
+        "Shadow Panda"
+      ],
+      "country": "中国",
+      "motivation": "经济间谍 + 破坏双目标",
+      "target_industries": [
+        "游戏",
+        "科技",
+        "制药",
+        "教育",
+        "政府",
+        "医疗"
+      ],
+      "target_countries": [
+        "美国",
+        "欧洲",
+        "东南亚",
+        "中国台湾"
+      ],
+      "first_seen": "2012",
+      "active": true,
+      "associated_malware": [
+        "Winnti",
+        "PlugX",
+        "PortDoor",
+        "ShadowPad"
+      ],
+      "associated_techniques": [
+        "T1566",
+        "T1059",
+        "T1071",
+        "T1105",
+        "T1005",
+        "T1027",
+        "T1195",
+        "T1550"
+      ],
+      "associated_cves": [
+        "CVE-2021-26855"
+      ],
+      "description": "APT41（又称Winnti）是一个同时从事经济间谍和破坏活动的APT组织，以针对游戏行业的源代码窃取和供应链攻击闻名。该组织的Winnti恶意软件被多个APT组织共享使用。",
+      "references": [
+        "https://attack.mitre.org/groups/G0096",
+        "https://attack.mitre.org/groups/G0096/"
+      ]
+    },
+    {
+      "id": "G0130",
+      "name": "Void Balaur",
+      "aliases": [
+        "VoidBalaur",
+        "CyberSpy"
+      ],
+      "country": "俄罗斯",
+      "motivation": "雇佣黑客、情报贩卖",
+      "target_industries": [
+        "IT",
+        "金融",
+        "政府",
+        "媒体"
+      ],
+      "target_countries": [
+        "俄罗斯",
+        "乌克兰",
+        "欧洲",
+        "美国"
+      ],
+      "first_seen": "2015",
+      "active": true,
+      "associated_malware": [],
+      "associated_techniques": [
+        "T1566",
+        "T1071",
+        "T1204",
+        "T1114",
+        "T1087"
+      ],
+      "associated_cves": [],
+      "description": "Void Balaur是一个俄罗斯雇佣黑客组织，以提供针对企业电子邮件账户的入侵服务（Hack-for-Hire）闻名，出价数千美元即可入侵目标邮箱。",
+      "references": [
+        "https://attack.mitre.org/groups/G0130/"
+      ]
+    },
+    {
+      "id": "G0080",
+      "name": "Kimsuky",
+      "aliases": [
+        "Black Banshee",
+        "Thallium",
+        "APT-C-27",
+        "Velvet Chollima"
+      ],
+      "country": "朝鲜",
+      "motivation": "情报收集",
+      "target_industries": [
+        "政府",
+        "国防",
+        "外交",
+        "智库",
+        "媒体"
+      ],
+      "target_countries": [
+        "韩国",
+        "美国",
+        "日本",
+        "欧洲"
+      ],
+      "first_seen": "2012",
+      "active": true,
+      "associated_malware": [
+        "AppleSeed",
+        "GoldDragon",
+        "RokRAT",
+        "BabyShark",
+        "PebbleDash"
+      ],
+      "associated_techniques": [
+        "T1566",
+        "T1204",
+        "T1059",
+        "T1071",
+        "T1005",
+        "T1082",
+        "T1027",
+        "T1114"
+      ],
+      "associated_cves": [],
+      "description": "Kimsuky是朝鲜侦察总局（RGB）下属的APT组织，以针对韩国和美国的朝鲜半岛问题专家、政府官员进行鱼叉式钓鱼和凭证窃取活动闻名。",
+      "references": [
+        "https://attack.mitre.org/groups/G0080",
+        "https://attack.mitre.org/groups/G0080/"
+      ]
+    },
+    {
+      "id": "G0139",
+      "name": "UNC3890",
+      "aliases": [
+        "APT-C-53",
+        "Agrius"
+      ],
+      "country": "伊朗",
+      "motivation": "破坏、数据擦除",
+      "target_industries": [
+        "能源",
+        "政府",
+        "金融",
+        "科技"
+      ],
+      "target_countries": [
+        "以色列",
+        "沙特阿拉伯",
+        "中东"
+      ],
+      "first_seen": "2020",
+      "active": true,
+      "associated_malware": [
+        "Stonedrill",
+        "Apostle",
+        "ZeroCleare"
+      ],
+      "associated_techniques": [
+        "T1566",
+        "T1485",
+        "T1486",
+        "T1071",
+        "T1059",
+        "T1027"
+      ],
+      "associated_cves": [],
+      "description": "UNC3890（又称Agrius）是一个以数据破坏和擦除为主要目的的APT组织，使用定制化的擦除器（Wiper）针对中东地区的能源和政府目标进行攻击，伪装成勒索软件攻击。",
+      "references": [
+        "https://attack.mitre.org/groups/G0139/"
+      ]
+    },
+    {
+      "id": "G0041",
+      "name": "Strider",
+      "aliases": [
+        "APT17",
+        "SMOKING GUN",
+        "DOLPHIN"
+      ],
+      "country": "中国",
+      "motivation": "情报收集",
+      "target_industries": [
+        "政府",
+        "IT",
+        "国防",
+        "法律"
+      ],
+      "target_countries": [
+        "美国",
+        "欧洲",
+        "亚洲"
+      ],
+      "first_seen": "2011",
+      "active": false,
+      "associated_malware": [
+        "AceHash",
+        "MSUpdater",
+        "HTran"
+      ],
+      "associated_techniques": [
+        "T1071",
+        "T1059",
+        "T1105",
+        "T1012"
+      ],
+      "associated_cves": [],
+      "description": "APT17（又称Strider）是中国APT组织，以针对IT服务提供商和律师事务所的网络间谍活动闻名，曾通过管理服务提供商（MSP）作为跳板攻击下游客户。",
+      "references": [
+        "https://attack.mitre.org/groups/G0041",
+        "https://attack.mitre.org/groups/G0041/"
+      ]
+    },
+    {
+      "id": "G0075",
+      "name": "TA551",
+      "aliases": [
+        "Gold Neiran",
+        "BumbleBee"
+      ],
+      "country": "俄罗斯",
+      "motivation": "初始访问代理",
+      "target_industries": [
+        "金融",
+        "制造",
+        "科技",
+        "教育"
+      ],
+      "target_countries": [
+        "美国",
+        "欧洲",
+        "全球"
+      ],
+      "first_seen": "2016",
+      "active": true,
+      "associated_malware": [
+        "Valak",
+        "Dridex",
+        "IcedID",
+        "BumbleBee",
+        "SquirrelWaffle"
+      ],
+      "associated_techniques": [
+        "T1566",
+        "T1204",
+        "T1059",
+        "T1071",
+        "T1105",
+        "T1027"
+      ],
+      "associated_cves": [],
+      "description": "TA551是一个初始访问代理（Initial Access Broker）组织，通过大规模鱼叉式钓鱼邮件分发恶意软件加载器，将受感染的网络访问权限出售给勒索软件组织。",
+      "references": [
+        "https://attack.mitre.org/groups/G0075/"
+      ]
+    },
+    {
+      "id": "G0136",
+      "name": "UNC3313",
+      "aliases": [
+        "APT-TG"
+      ],
+      "country": "中国",
+      "motivation": "情报收集",
+      "target_industries": [
+        "电信",
+        "IT",
+        "金融",
+        "政府"
+      ],
+      "target_countries": [
+        "东南亚",
+        "中东",
+        "全球"
+      ],
+      "first_seen": "2018",
+      "active": true,
+      "associated_malware": [
+        "MIRAGE",
+        "SAIGON",
+        "KITTEN"
+      ],
+      "associated_techniques": [
+        "T1566",
+        "T1059",
+        "T1071",
+        "T1105",
+        "T1005",
+        "T1027"
+      ],
+      "associated_cves": [],
+      "description": "UNC3313是一个针对电信和IT行业的网络间谍组织，长期在东南亚和中东地区进行情报收集活动，善于利用合法的远程管理工具进行隐蔽操作。",
+      "references": [
+        "https://attack.mitre.org/groups/G0136/"
+      ]
+    },
+    {
+      "id": "G0019",
+      "name": "Naikon",
+      "aliases": [
+        "APT30",
+        "Rocket Kitten",
+        "Calleo"
+      ],
+      "country": "中国",
+      "motivation": "情报收集",
+      "target_industries": [
+        "政府",
+        "国防",
+        "外交",
+        "科技"
+      ],
+      "target_countries": [
+        "东南亚",
+        "南海周边国家"
+      ],
+      "first_seen": "2012",
+      "active": true,
+      "associated_malware": [
+        "NBTScan",
+        "MailSpy",
+        "RARSTONE"
+      ],
+      "associated_techniques": [
+        "T1566",
+        "T1059",
+        "T1071",
+        "T1105",
+        "T1005",
+        "T1114",
+        "T1027"
+      ],
+      "associated_cves": [],
+      "description": "Naikon（又称APT30）是一个长期针对东南亚政府和军事目标的APT组织，以窃取与南海争议相关的地缘政治情报闻名。",
+      "references": [
+        "https://attack.mitre.org/groups/G0019",
+        "https://attack.mitre.org/groups/G0019/"
+      ]
+    },
+    {
+      "id": "G0004",
+      "name": "APT12",
+      "aliases": [
+        "Numbered Panda",
+        "DNCalvin",
+        "Cascade Panda"
+      ],
+      "country": "中国",
+      "motivation": "情报收集",
+      "target_industries": [
+        "政府",
+        "国防",
+        "媒体",
+        "科技"
+      ],
+      "target_countries": [
+        "美国",
+        "日本",
+        "台湾"
+      ],
+      "first_seen": "2007",
+      "active": true,
+      "associated_malware": [
+        "Xiango",
+        "Taidoor",
+        "Calvin"
+      ],
+      "associated_techniques": [
+        "T1566",
+        "T1059",
+        "T1071",
+        "T1105",
+        "T1005",
+        "T1027"
+      ],
+      "associated_cves": [],
+      "description": "APT12（又称Numbered Panda）是一个中国的APT组织，以针对政府和国防部门的鱼叉式钓鱼攻击闻名。",
+      "references": [
+        "https://attack.mitre.org/groups/G0004",
+        "https://attack.mitre.org/groups/G0004/"
+      ]
+    }
+  ],
+  "meta": {
+    "total": 34,
+    "countries": [
+      "俄罗斯",
+      "中国",
+      "朝鲜",
+      "伊朗",
+      "巴勒斯坦",
+      "美国/英国"
+    ],
+    "last_updated": "2026-06-25",
+    "source": "MITRE ATT&CK-derived curated snapshot",
+    "source_url": "https://attack.mitre.org/",
+    "notice": "Static public-knowledge snapshot; not live threat telemetry."
+  }
+}

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SecAgentX - AI 安全智能体</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <!-- ═══ 关键 CSS 内联：防止 FOUC（闪白）═══ -->
+  <style>
+    /* 立即生效的暗色背景，防止 Naive UI 主题加载前闪白 */
+    html, body, #app {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: #0f1117;
+      color: #f1f5f9;
+    }
+    /* 字体加载期间使用系统字体，减少 CLS */
+    body {
+      font-family: 'Noto Sans SC', system-ui, -apple-system, sans-serif;
+    }
+    code, pre, kbd {
+      font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
+    }
+    /* 隐藏未激活的 transition 组件，防止闪烁 */
+    .fade-slide-leave-active,
+    .fade-slide-enter-active {
+      transition: opacity 0.15s ease;
+    }
+    .fade-slide-enter-from,
+    .fade-slide-leave-to {
+      opacity: 0;
+    }
+    /* 禁止 Naive UI 初始化时的布局偏移 */
+    n-layout, n-layout-sider, n-menu {
+      contain: layout style;
+    }
+  </style>
+  <script type="module" crossorigin src="./assets/index-C0XQKu4q.js"></script>
+  <link rel="modulepreload" crossorigin href="./assets/vendor-icons-BTNgi7vU.js">
+  <link rel="modulepreload" crossorigin href="./assets/rolldown-runtime-DK3Fl9T5.js">
+  <link rel="modulepreload" crossorigin href="./assets/vendor-ui-Cdd65KTN.js">
+  <link rel="modulepreload" crossorigin href="./assets/vendor-vue-CXKcZAmz.js">
+  <link rel="stylesheet" crossorigin href="./assets/index-D9Su3fYY.css">
+</head>
+<body>
+  <div id="app"></div>
+</body>
+</html>

@@ -1,0 +1,167 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - run: python -m compileall -q backend tests scripts
+      - name: Run full backend suite with coverage gate
+        run: pytest -m "not slow" --timeout=60 --cov=backend --cov-report=term --cov-report=xml --cov-fail-under=60
+        env:
+          SECAGENTX_PASSWORD: SecAgentX-E2E-Only-2026!
+          SECAGENTX_JWT_SECRET: secagentx-ci-secret-at-least-32-characters-long
+          FIREWALL_BACKEND: mock
+      - name: Validate published knowledge snapshots
+        run: python scripts/quality/knowledge_health.py --strict --score
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: pip install -r requirements-dev.txt
+      - run: npm ci && npm run build
+        working-directory: frontend
+      - run: python -m build
+      - name: Verify wheel resources and CLI entry point
+        shell: bash
+        run: |
+          python - <<'PY'
+          import glob, zipfile
+          wheel = glob.glob('dist/secagentx-*.whl')[0]
+          with zipfile.ZipFile(wheel) as archive:
+              names = set(archive.namelist())
+              required = {
+                  'backend/_assets/config.yaml',
+                  'backend/_assets/frontend/dist/index.html',
+                  'backend/_assets/knowledge_data/mitre_attack/techniques.json',
+              }
+              missing = required - names
+              assert not missing, f'missing wheel resources: {sorted(missing)}'
+          PY
+          python -m venv --system-site-packages /tmp/secagentx-wheel-smoke
+          /tmp/secagentx-wheel-smoke/bin/pip install --no-deps dist/secagentx-*.whl
+          (cd /tmp && /tmp/secagentx-wheel-smoke/bin/secagentx --version)
+      - name: Upload installable Python package
+        uses: actions/upload-artifact@v7
+        with:
+          name: secagentx-python-package
+          path: dist/*
+          if-no-files-found: error
+
+  container-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Validate Compose configuration
+        run: docker compose config --quiet
+        env:
+          SECAGENTX_PASSWORD: SecAgentX-Compose-Validation-Only!
+          SECAGENTX_JWT_SECRET: secagentx-compose-validation-secret-32-chars
+          POSTGRES_PASSWORD: SecAgentX-Postgres-Validation-Only!
+      - name: Build production image
+        run: docker build --tag secagentx:ci .
+
+  browser-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: pip install -r requirements-dev.txt
+      - run: npm ci
+        working-directory: frontend
+      - run: npx playwright install --with-deps chromium
+        working-directory: frontend
+      - run: npm run test:e2e
+        working-directory: frontend
+        env:
+          SECAGENTX_PASSWORD: SecAgentX-E2E-Only-2026!
+          SECAGENTX_JWT_SECRET: secagentx-e2e-secret-at-least-32-characters
+          FIREWALL_BACKEND: mock
+
+  postgres-integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: secagentx_test
+          POSTGRES_USER: secagentx
+          POSTGRES_PASSWORD: postgres-test-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U secagentx -d secagentx_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - name: Verify postgresql+asyncpg repository URL
+        env:
+          DATABASE_URL: postgresql+asyncpg://secagentx:postgres-test-only-password@127.0.0.1:5432/secagentx_test
+        run: |
+          python - <<'PY'
+          import asyncio
+          import os
+          from backend.storage.database import Repository
+
+          async def main():
+              async with Repository(os.environ["DATABASE_URL"]) as repo:
+                  await repo.execute("CREATE TABLE IF NOT EXISTS secagentx_ci (id INTEGER PRIMARY KEY, value TEXT)")
+                  await repo.execute("INSERT INTO secagentx_ci (id, value) VALUES (?, ?)", (1, "ok"))
+                  row = await repo.fetch_one("SELECT value FROM secagentx_ci WHERE id = ?", (1,))
+                  assert row == {"value": "ok"}
+
+          asyncio.run(main())
+          PY

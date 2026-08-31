@@ -1,0 +1,9 @@
+include config.yaml
+recursive-include knowledge_data *.json
+include frontend/index.html frontend/package.json frontend/package-lock.json frontend/vite.config.js
+recursive-include frontend/src *
+recursive-include frontend/public *
+recursive-include frontend/dist *
+prune frontend/node_modules
+prune frontend/.vite
+prune frontend/coverage

@@ -1,0 +1,49 @@
+services:
+  secagentx:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "${SECAGENTX_PORT:-8000}:8000"
+    environment:
+      SECAGENTX_HOST: 0.0.0.0
+      SECAGENTX_PORT: 8000
+      SECAGENTX_PASSWORD: "${SECAGENTX_PASSWORD:?Set SECAGENTX_PASSWORD to a strong value of at least 12 characters}"
+      SECAGENTX_JWT_SECRET: "${SECAGENTX_JWT_SECRET:?Set SECAGENTX_JWT_SECRET to a random value of at least 32 characters}"
+      SECAGENTX_ALLOWED_HOSTS: "${SECAGENTX_ALLOWED_HOSTS:-}"
+      SECAGENTX_COOKIE_SECURE: "${SECAGENTX_COOKIE_SECURE:-false}"
+      SECAGENTX_FORCE_HSTS: "${SECAGENTX_FORCE_HSTS:-false}"
+      DATABASE_URL: "postgresql+asyncpg://secagentx:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD to a strong random value}@postgres:5432/secagentx"
+      FIREWALL_BACKEND: "${FIREWALL_BACKEND:-disabled}"
+      SECAGENTX_ACTIVE_PROVIDER: "${SECAGENTX_ACTIVE_PROVIDER:-}"
+      SECAGENTX_LLM_API_BASE: "${SECAGENTX_LLM_API_BASE:-}"
+      SECAGENTX_LLM_MODEL: "${SECAGENTX_LLM_MODEL:-}"
+      SECAGENTX_LLM_API_KEY: "${SECAGENTX_LLM_API_KEY:-}"
+      SECAGENTX_LLM_ALLOW_NO_KEY: "${SECAGENTX_LLM_ALLOW_NO_KEY:-false}"
+      DEEPSEEK_API_KEY: "${DEEPSEEK_API_KEY:-}"
+      QWEN_API_KEY: "${QWEN_API_KEY:-}"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: secagentx
+      POSTGRES_USER: secagentx
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD to a strong random value}"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U secagentx -d secagentx"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres-data:

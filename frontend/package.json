@@ -1,0 +1,37 @@
+{
+  "name": "secagentx-frontend",
+  "version": "3.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
+  },
+  "dependencies": {
+    "@vicons/ionicons5": "^0.13.0",
+    "echarts": "^6.1.0",
+    "marked": "^12.0.0",
+    "naive-ui": "^2.38.0",
+    "pinia": "^2.1.0",
+    "vue": "^3.4.0",
+    "vue-router": "^4.3.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.0",
+    "@vitejs/plugin-vue": "^6.0.8",
+    "@vue/test-utils": "^2.4.11",
+    "jsdom": "^29.1.1",
+    "vite": "^8.2.2",
+    "vitest": "^4.1.10"
+  },
+  "overrides": {
+    "nanoid": "^3.3.18",
+    "postcss": "^8.5.23"
+  }
+}

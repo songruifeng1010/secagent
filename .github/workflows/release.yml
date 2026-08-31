@@ -1,0 +1,175 @@
+name: Release SecAgentX
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: secagentx_test
+          POSTGRES_USER: secagentx
+          POSTGRES_PASSWORD: postgres-release-test-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U secagentx -d secagentx_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install and test backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+          python -m compileall -q backend tests scripts
+          pytest -m "not slow" --timeout=60 --cov=backend --cov-report=term --cov-fail-under=60
+          python scripts/quality/knowledge_health.py --strict --score
+        env:
+          SECAGENTX_PASSWORD: SecAgentX-Release-Test-Only-2026!
+          SECAGENTX_JWT_SECRET: secagentx-release-test-secret-at-least-32-chars
+          FIREWALL_BACKEND: mock
+
+      - name: Test and build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm test
+          npm run build
+
+      - name: Audit release dependencies and source
+        run: |
+          pip-audit -r requirements.txt
+          bandit -r backend -lll -iii
+          cyclonedx-py requirements -i requirements.txt -o sbom-python.json
+          npm audit --prefix frontend --omit=dev --audit-level=high
+
+      - name: Verify PostgreSQL repository adapter
+        env:
+          DATABASE_URL: postgresql+asyncpg://secagentx:postgres-release-test-only-password@127.0.0.1:5432/secagentx_test
+        run: |
+          python - <<'PY'
+          import asyncio
+          import os
+          from backend.storage.database import Repository
+
+          async def main():
+              async with Repository(os.environ["DATABASE_URL"]) as repo:
+                  await repo.execute("CREATE TABLE secagentx_release (id INTEGER PRIMARY KEY, value TEXT)")
+                  await repo.execute("INSERT INTO secagentx_release (id, value) VALUES (?, ?)", (1, "ok"))
+                  row = await repo.fetch_one("SELECT value FROM secagentx_release WHERE id = ?", (1,))
+                  assert row == {"value": "ok"}
+
+          asyncio.run(main())
+          PY
+
+      - name: Run browser end-to-end acceptance suite
+        working-directory: frontend
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:e2e
+        env:
+          SECAGENTX_PASSWORD: SecAgentX-Release-Test-Only-2026!
+          SECAGENTX_JWT_SECRET: secagentx-release-test-secret-at-least-32-chars
+          FIREWALL_BACKEND: mock
+
+      - name: Build source and wheel distributions
+        run: python -m build
+
+      - name: Verify distributions
+        run: |
+          python - <<'PY'
+          import glob
+          import json
+          import zipfile
+
+          wheel = glob.glob("dist/secagentx-*.whl")
+          sdist = glob.glob("dist/secagentx-*.tar.gz")
+          assert len(wheel) == 1, wheel
+          assert len(sdist) == 1, sdist
+          with zipfile.ZipFile(wheel[0]) as archive:
+              names = set(archive.namelist())
+              assert "backend/_assets/config.yaml" in names
+              assert "backend/_assets/frontend/dist/index.html" in names
+              cve = json.loads(
+                  archive.read(
+                      "backend/_assets/knowledge_data/cve/vulnerabilities.json"
+                  )
+              )
+              assert cve["meta"]["source"] == "NVD API 2.0"
+          PY
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-distributions
+          path: dist/
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-sbom
+          path: sbom-python.json
+          if-no-files-found: error
+
+  publish-github-release:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-distributions
+          path: dist/
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-sbom
+          path: release-assets/
+      - name: Create GitHub Release with verified artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME"
+          dist/* release-assets/sbom-python.json
+          --repo "$GITHUB_REPOSITORY"
+          --verify-tag
+          --generate-notes
+          --title "SecAgentX ${GITHUB_REF_NAME#v}"
+
+  publish-pypi:
+    needs: [build-and-test, publish-github-release]
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/secagentx
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-distributions
+          path: dist/
+
+      - name: Publish to PyPI with Trusted Publishing
+        uses: pypa/gh-action-pypi-publish@release/v1

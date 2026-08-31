@@ -1,0 +1,6 @@
+# 可选云防火墙适配器 SDK（安装在核心运行时之上）
+-r requirements.txt
+
+alibabacloud-ecs20140526>=3.0.0
+tencentcloud-sdk-python-vpc>=3.0.0
+boto3>=1.34.0

@@ -1,0 +1,195 @@
+# SecAgentX 配置文件
+# 自动从 .env 加载 API Key，此处配置业务参数
+
+# LLM 配置（API Key 从 .env 读取）
+llm:
+  deepseek:
+    model: "deepseek-chat"
+    temperature: 0.1
+    max_tokens: 8192
+    api_key: "${DEEPSEEK_API_KEY}"
+    timeout_seconds: 90
+  qwen:
+    model: "qwen-max"
+    temperature: 0.1
+    max_tokens: 4096
+    api_key: "${QWEN_API_KEY}"
+    timeout_seconds: 90
+
+  # LLM 超时降级与自动切换
+  # 主 LLM 超时/失败时自动切换到备用 LLM，提升系统可靠性
+  fallback:
+    enabled: true                   # 总开关（设为 true 启用）
+    provider: "qwen"                # 备用 LLM 名称 (deepseek / qwen)
+    timeout_seconds: 60             # 超时阈值（秒），超过则切换到备用（与主 LLM 90s 对齐，减少误降级）
+    fallback_on_timeout: true       # 超时触发降级
+    fallback_on_error: true         # 其他错误触发降级
+    config:                         # ═══ 修复：必须显式指定可用模型（否则 QwenProvider 落默认 qwen2.5-72b-instruct → 403） ═══
+      model: "qwen-max"             # 当前账号已开通（实测 200）；qwen2.5-72b-instruct 会 403 access_denied
+      api_key: "${QWEN_API_KEY}"
+
+# Agent 配置
+agents:
+  knowledge:
+    max_retrieval_rounds: 3
+    free_qa_direct: true             # 普通咨询直接 LLM 回答，不访问安全知识库
+    free_qa_fallback: true           # RAG 无接地结果时允许降级为谨慎的 LLM 直答
+
+# 总调度配置
+orchestrator:
+  agent_id: "orch-001"
+
+# ============================================================
+# Decision Fusion 统一决策框架（Sense-Decide 分离）
+# 各专业 Agent 只输出证据包（findings + evidence_confidence），
+# 唯一 final verdict 由融合引擎统一裁决。引擎为可替换模块。
+# ============================================================
+decision_fusion:
+  enabled: true                      # false → 回退旧确定性聚合（_aggregate_confidence）
+  engine: "dempster_shafer"          # 可替换: dempster_shafer | weighted_average
+  conflict_threshold: 0.6            # Dempster 冲突系数 K 超阈值 → 需人工介入
+  # agent_weights:                   # 可选：覆盖各 Agent 基础权重
+  #   analyst-001: 0.35
+  #   intel-001: 0.25
+
+# ============================================================
+# 风险评分模型（Risk Score Model v3.0）
+# 范围: 0~100（Clamp）
+# 公式: Risk = Behavior×40% + Intel×30% + Asset×20% + Context×10%
+# enabled=false → 回退旧规则加法模型（LegacyRiskScorer）
+# ============================================================
+risk_model:
+  enabled: true                      # true=加权模型(默认)  false=回退旧加法模型
+  weights:                           # 参数化权重（四维，和为 1.0）
+    behavior: 0.40                   # 行为证据 40%
+    intel: 0.30                      # 威胁情报 30%
+    asset: 0.20                      # 资产价值 20%
+    context: 0.10                    # 上下文线索 10%
+  thresholds:                        # 风险等级阈值（0~100）
+    low: 40                          # 0~39 低危
+    mid: 60                          # 40~59 中危
+    high: 80                         # 60~79 高危
+    critical: 100                    # 80~100 紧急
+  unknown_baseline: 50               # 信息缺失时子分基线（缺失≠干净）
+  benign_score: 15                   # 确认良性时子分
+
+# ============================================================
+# 跨区域联邦配置
+# ============================================================
+federation:
+  enabled: false                   # 总开关
+  region_id: "default"             # 本区域 ID（如 "beijing" / "shanghai"）
+  region_name: "默认区域"           # 本区域名称
+
+  # 其他区域的连接信息（每个区域一个条目）
+  peers:
+    - region_id: "beijing"
+      region_name: "北京"
+      api_url: "http://10.0.1.100:8000"  # 对端 API 地址
+      api_token: "${FED_TOKEN_BEIJING}"   # 对端认证 Token
+      sync_events: true                    # 是否同步事件
+      sync_blacklist: true                 # 是否同步黑名单
+
+  # 同步策略
+  sync:
+    event_interval_seconds: 60     # 事件同步间隔
+    blacklist_interval_seconds: 30 # 黑名单同步间隔
+    max_batch_size: 100            # 每批最大同步条数
+    timeout_seconds: 10            # 同步请求超时
+
+# ============================================================
+# 零人工干预配置
+# ============================================================
+auto_operation:
+  enabled: false              # 总开关：false 时只分析不自动处置
+
+  # --- 告警接入 ---
+  ingestion:
+    webhook_path: "/webhook/alert"   # Webhook 接收路径
+    kafka_topic: ""                  # Kafka 主题（空=不启用）
+    kafka_bootstrap: ""              # Kafka 地址
+    syslog_port: 0                   # Syslog 端口（0=不启用）
+    max_queue_size: 1000             # 内部队列上限
+
+  # --- 邮件接入（将可疑邮件转发到指定邮箱，自动分析） ---
+  email_ingestion:
+    enabled: false                      # 总开关
+    imap_server: ""                     # IMAP 服务器地址（也可通过环境变量 EMAIL_IMAP_SERVER 设置）
+    imap_port: 993                      # IMAP 端口
+    username: ""                        # 邮箱用户名（也可通过环境变量 EMAIL_USERNAME 设置）
+    password: ""                        # 邮箱密码/应用专用密码（也可通过环境变量 EMAIL_PASSWORD 设置）
+    mailbox: "INBOX"                    # 监控的邮箱目录
+    processed_folder: "Processed"       # 处理完成后移动到的目录
+    poll_interval_seconds: 60           # 轮询间隔（秒）
+    max_email_size_mb: 10              # 单封邮件最大处理大小
+    process_attachments: true           # 是否解析附件元数据
+
+  # --- 告警去重 ---
+  dedup:
+    window_seconds: 1800             # 去重窗口（秒），默认 30 分钟
+    max_entries: 10000               # 最大跟踪数，超限时淘汰最早 1/3
+
+  # --- 自动处置阈值 ---
+  thresholds:
+    auto_close: 0.85                 # ≥0.85 自动闭环
+    auto_block: 0.70                 # ≥0.70 自动封禁（低于此值拒绝自动封禁）
+    expand_investigation: 0.50       # ≥0.50 扩大调查
+    manual_escalation: 0.30          # <0.30 升级人工
+
+  # --- 自动封禁保护 ---
+  block_protection:
+    whitelist_ips:                   # 永不自动封禁的 IP
+      - "10.0.0.1"
+      - "192.168.1.1"
+      - "172.16.0.1"
+    default_duration_minutes: 120    # 默认封禁时长
+    max_duration_minutes: 1440       # 最大封禁时长（24h）
+
+  # --- 自动升级通知 ---
+  escalation:
+    enabled: true
+    channels:
+      - type: console               # 控制台输出（默认启用）
+        enabled: true
+      - type: slack                  # Slack Webhook
+        enabled: false
+        webhook_url: "${SLACK_WEBHOOK_URL}"
+      - type: dingtalk               # 钉钉机器人
+        enabled: false
+        token: "${DINGTALK_TOKEN}"
+      - type: webhook                # 通用 Webhook
+        enabled: false
+        url: "${ESCALATION_WEBHOOK_URL}"
+      - type: openim                 # OpenIM 即时通讯（需显式配置后启用）
+        enabled: false
+        api_url: "http://localhost:10002"   # OpenIM API 地址
+        secret: "${OPENIM_SECRET}"                 # OpenIM 应用密钥
+        admin_user_id: "imAdmin"            # OpenIM 管理员账号
+        group_id: "sec-agentx-alerts"       # 告警推送目标群组
+        token_ttl: 7200                     # token 缓存时长（秒）
+    min_interval_seconds: 300        # 同一事件最小通知间隔（防刷）
+
+  # --- 自动巡检 ---
+  patrol:
+    enabled: false
+    interval_seconds: 1800           # 每 30 分钟巡检一次
+    block_renew_threshold: 0.50      # 威胁评分 ≥0.5 自动续封
+    reopen_window_hours: 24          # 闭环后 24h 内新告警→重新调查
+    max_renew_count: 3               # 最多自动续封次数（之后升级人工）
+
+  # --- 数据保留策略（自动清理，防止数据库无限增长） ---
+  data_retention:
+    enabled: false                     # 总开关（默认关闭，开启后首次运行即开始清理）
+    event_retention_days: 90           # 事件保留天数
+    conversation_retention_days: 30    # 对话记录保留天数
+    ioc_retention_days: 365            # IOC 保留天数
+    run_interval_hours: 24             # 清理周期（小时）
+
+# ============================================================
+# 熔断器配置
+# ============================================================
+circuit_breaker:
+  max_consecutive_failures: 3        # 连续 N 次误封禁 → 熔断
+  max_daily_blocks: 20               # 每日最多封禁 IP 数
+  reset_minutes: 30                  # 自动半开等待分钟数
+
