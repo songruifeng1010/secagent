@@ -145,7 +145,7 @@ def create_app() -> Optional[FastAPI]:
             await asyncio.gather(*_bg_tasks, return_exceptions=True)
             logger.info(f"[auto] 后台任务已关闭 ({len(_bg_tasks)} 个)")
 
-    app = FastAPI(title="SecAgentX API", version="3.1.0", lifespan=lifespan)
+    app = FastAPI(title="SecAgentX API", version="4.0.0", lifespan=lifespan)
 
     # ═══════════════════════ 安全中间件 ═══════════════════════
 
@@ -244,58 +244,10 @@ def create_app() -> Optional[FastAPI]:
             )
         return await call_next(request)
 
-    # 认证中间件（除开放路径外的所有 API 都需要 JWT）
+    # 本机控制台模式不使用账户、Cookie 或令牌认证。服务进程只能由 CLI
+    # 绑定到回环地址；远程访问由 CLI 拒绝，避免把无认证 API 暴露到网络。
     @app.middleware("http")
     async def auth_middleware(request: Request, call_next):
-        path = request.url.path
-        method = request.method
-
-        # 开放路径跳过认证
-        from backend.security.auth import is_open_path
-        if is_open_path(path):
-            return await call_next(request)
-
-        # WebSocket 认证在 ws handler 内完成（返回 HTTP 错误对 WS 无效）
-        if path.startswith("/ws/"):
-            return await call_next(request)
-
-        # API 路径需要 Bearer Token
-        if path.startswith("/api") or path.startswith("/webhook"):
-            from backend.security.auth import (
-                WEB_ACCESS_COOKIE,
-                WEB_CSRF_COOKIE,
-                get_bearer_token_from_request,
-                verify_token,
-            )
-            try:
-                credentials = await get_bearer_token_from_request(request)
-                cookie_authenticated = (
-                    credentials is None and bool(request.cookies.get(WEB_ACCESS_COOKIE))
-                )
-                if credentials is None and not cookie_authenticated:
-                    return error_response("AUTH_TOKEN_MISSING")
-                if cookie_authenticated and method in {"POST", "PUT", "PATCH", "DELETE"}:
-                    csrf_cookie = request.cookies.get(WEB_CSRF_COOKIE, "")
-                    csrf_header = request.headers.get("X-CSRF-Token", "")
-                    import hmac
-                    if not csrf_cookie or not hmac.compare_digest(csrf_cookie, csrf_header):
-                        return JSONResponse(
-                            status_code=403,
-                            content={
-                                "error": {
-                                    "code": "AUTH_CSRF_INVALID",
-                                    "message": "CSRF 校验失败",
-                                }
-                            },
-                        )
-                await verify_token(credentials, request)
-            except Exception as e:
-                err_str = str(e)
-                if "expired" in err_str.lower():
-                    return error_response("AUTH_TOKEN_EXPIRED")
-                return error_response("AUTH_TOKEN_INVALID", message=err_str)
-            return await call_next(request)
-
         return await call_next(request)
 
     # 最外层响应加固：认证/限流的提前返回也必须包含安全头和请求 ID。
@@ -372,309 +324,19 @@ def create_app() -> Optional[FastAPI]:
     else:
         logger.info(f"frontend dist not found at {frontend_dist}, API-only mode")
 
-    # ═══════════════════════ 认证 API ═══════════════════════
-
-    from backend.security.auth import (
-        ACCESS_TOKEN_EXPIRE_MINUTES,
-        REFRESH_TOKEN_EXPIRE_MINUTES,
-        WEB_ACCESS_COOKIE,
-        WEB_CSRF_COOKIE,
-        WEB_REFRESH_COOKIE,
-        RefreshTokenInvalid,
-        RefreshTokenReuseDetected,
-        create_access_token,
-        create_refresh_token,
-        revoke_refresh_token_family,
-        rotate_refresh_token,
-        LoginBody,
-    )
-    from backend.security.rbac import get_user_manager
-    user_manager = get_user_manager()  # 启动时即校验管理员初始凭据
-
-    _cookie_secure = os.getenv("SECAGENTX_COOKIE_SECURE", "").lower() in (
-        "1", "true", "yes",
-    )
-
-    def _require_allowed_web_origin(request: Request) -> None:
-        origin = (request.headers.get("origin") or "").rstrip("/")
-        allowed = {item.strip().rstrip("/") for item in ALLOWED_ORIGINS if item.strip()}
-        if origin and origin not in allowed:
-            raise HTTPException(status_code=403, detail="Web 登录来源不在允许列表")
-
-    def _set_web_auth_cookies(response, access_token: str, refresh_token: str) -> None:
-        import secrets
-        csrf_token = secrets.token_urlsafe(32)
-        common = {
-            "secure": _cookie_secure,
-            "samesite": "strict",
-        }
-        response.set_cookie(
-            WEB_ACCESS_COOKIE,
-            access_token,
-            max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-            httponly=True,
-            path="/",
-            **common,
-        )
-        response.set_cookie(
-            WEB_REFRESH_COOKIE,
-            refresh_token,
-            max_age=REFRESH_TOKEN_EXPIRE_MINUTES * 60,
-            httponly=True,
-            path="/api/auth/web",
-            **common,
-        )
-        response.set_cookie(
-            WEB_CSRF_COOKIE,
-            csrf_token,
-            max_age=REFRESH_TOKEN_EXPIRE_MINUTES * 60,
-            httponly=False,
-            path="/",
-            **common,
-        )
-        response.headers["Cache-Control"] = "no-store"
-
-    def _clear_web_auth_cookies(response) -> None:
-        response.delete_cookie(WEB_ACCESS_COOKIE, path="/")
-        response.delete_cookie(WEB_REFRESH_COOKIE, path="/api/auth/web")
-        response.delete_cookie(WEB_CSRF_COOKIE, path="/")
-        response.headers["Cache-Control"] = "no-store"
-
-    @app.post("/api/auth/login")
-    async def login(body: LoginBody):
-        """登录获取 JWT 双令牌（access_token + refresh_token）
-
-        使用 RBAC UserManager 进行用户认证，支持多用户（admin/operator/analyst/viewer）。
-        """
-        user = user_manager.authenticate(body.username, body.password)
-        if not user:
-            return error_response("AUTH_WRONG_CREDENTIALS")
-
-        access_token = create_access_token(
-            sub=user.username, role=user.role, token_version=user.token_version
-        )
-        refresh_token = create_refresh_token(
-            sub=user.username, role=user.role, token_version=user.token_version
-        )
-
-        # ─── OpenIM 账号同步钩子（异步，不影响登录响应） ───
-        # 登录成功后，自动将用户同步到 OpenIM（通过桥接器）
-        try:
-            bridge_url = os.getenv("OPENIM_BRIDGE_URL", "").rstrip("/")
-            if bridge_url:
-                asyncio.ensure_future(_sync_user_to_openim(
-                    bridge_url, user.username,
-                    user.display_name or user.username, user.role,
-                ))
-        except Exception as _sync_e:
-            logger.warning(f"OpenIM 账号同步钩子异常: {_sync_e}")
-
-        return {
-            "access_token": access_token,
-            "refresh_token": refresh_token,
-            "token_type": "bearer",
-            "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-            "refresh_expires_in": REFRESH_TOKEN_EXPIRE_MINUTES * 60,
-            "user": user.to_dict(),
-        }
-
-
-    async def _sync_user_to_openim(bridge_url: str, username: str,
-                                   display_name: str, role: str) -> None:
-        """异步调用桥接器同步用户到 OpenIM（失败仅记录日志）"""
-        try:
-            import httpx
-            async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.post(
-                    f"{bridge_url}/account/sync",
-                    json={
-                        "username": username,
-                        "display_name": display_name,
-                        "role": role,
-                    },
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    if data.get("success"):
-                        logger.info(f"OpenIM 账号自动同步成功: {username} → {data.get('openim_user_id')}")
-                    else:
-                        logger.warning(f"OpenIM 账号同步返回失败: {username}: {data}")
-                else:
-                    logger.warning(f"OpenIM 账号同步 HTTP {resp.status_code}")
-        except Exception as e:
-            logger.warning(f"OpenIM 账号同步异常: {e}")
-
-    class RefreshBody(BaseModel):
-        refresh_token: str
-
-    @app.post("/api/auth/refresh")
-    async def refresh_token(body: RefreshBody):
-        """使用 refresh_token 换取新的 access_token + refresh_token
-
-        请求体: {"refresh_token": "..."}
-        返回: 新的 access_token + refresh_token（轮换机制：旧 refresh_token 不再有效）
-        """
-        try:
-            new_access, new_refresh, expires_in = rotate_refresh_token(body.refresh_token)
-            return {
-                "access_token": new_access,
-                "refresh_token": new_refresh,
-                "token_type": "bearer",
-                "expires_in": expires_in,
-                "refresh_expires_in": REFRESH_TOKEN_EXPIRE_MINUTES * 60,
-            }
-        except RefreshTokenReuseDetected as e:
-            return error_response("AUTH_TOKEN_INVALID", message=str(e))
-        except RefreshTokenInvalid as e:
-            return error_response("AUTH_TOKEN_INVALID", message=str(e))
-        except Exception as e:
-            err_msg = str(e)
-            if "expired" in err_msg.lower():
-                return error_response("AUTH_TOKEN_EXPIRED", message="refresh_token 已过期，请重新登录")
-            return error_response("AUTH_TOKEN_INVALID", message=f"无效的 refresh_token: {err_msg}")
-
-    @app.post("/api/auth/web/login")
-    async def web_login(body: LoginBody, request: Request):
-        """浏览器专用登录：令牌只写入 HttpOnly Cookie，不返回给 JavaScript。"""
-        _require_allowed_web_origin(request)
-        user = user_manager.authenticate(body.username, body.password)
-        if not user:
-            return error_response("AUTH_WRONG_CREDENTIALS")
-        access_token = create_access_token(
-            sub=user.username, role=user.role, token_version=user.token_version
-        )
-        refresh_token_value = create_refresh_token(
-            sub=user.username, role=user.role, token_version=user.token_version
-        )
-        response = JSONResponse({
-            "status": "ok",
-            "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-            "user": user.to_dict(),
-        })
-        _set_web_auth_cookies(response, access_token, refresh_token_value)
-        return response
-
-    @app.post("/api/auth/web/refresh")
-    async def web_refresh(request: Request):
-        """轮换 HttpOnly refresh Cookie，并重新签发浏览器会话。"""
-        _require_allowed_web_origin(request)
-        token = request.cookies.get(WEB_REFRESH_COOKIE, "")
-        if not token:
-            return error_response("AUTH_TOKEN_MISSING", message="缺少 Web 刷新会话")
-        try:
-            new_access, new_refresh, expires_in = rotate_refresh_token(token)
-            response = JSONResponse({"status": "ok", "expires_in": expires_in})
-            _set_web_auth_cookies(response, new_access, new_refresh)
-            return response
-        except (RefreshTokenReuseDetected, RefreshTokenInvalid) as exc:
-            response = error_response("AUTH_TOKEN_INVALID", message=str(exc))
-            _clear_web_auth_cookies(response)
-            return response
-        except Exception as exc:
-            response = error_response("AUTH_TOKEN_INVALID", message=str(exc))
-            _clear_web_auth_cookies(response)
-            return response
-
-    @app.post("/api/auth/web/logout")
-    async def web_logout(request: Request):
-        """撤销浏览器 refresh 会话并清除全部认证 Cookie。"""
-        _require_allowed_web_origin(request)
-        token = request.cookies.get(WEB_REFRESH_COOKIE, "")
-        if token:
-            revoke_refresh_token_family(token)
-        response = JSONResponse({"status": "ok"})
-        _clear_web_auth_cookies(response)
-        return response
-
-
-    # ═══════════════════════ 用户管理 API ═══════════════════════
-    from backend.security.auth import verify_token
-    from backend.security.rbac import require_permission
-
-    @app.get("/api/users")
-    async def list_users(_=Depends(require_permission("admin:users"))):
-        """列出所有用户（需要 admin:users 权限）"""
-        mgr = get_user_manager()
-        return {"users": mgr.list_users()}
-
-    class CreateUserBody(BaseModel):
-        username: str
-        password: str
-        role: str = "viewer"
-        display_name: str = ""
-
-    @app.post("/api/users")
-    async def create_user(body: CreateUserBody,
-                          _=Depends(require_permission("admin:users"))):
-        """创建用户（需要 admin:users 权限）"""
-        mgr = get_user_manager()
-        try:
-            user = mgr.create_user(
-                username=body.username,
-                password=body.password,
-                role=body.role,
-                display_name=body.display_name,
-            )
-            return {"status": "ok", "user": user.to_dict()}
-        except ValueError as e:
-            return error_response("USER_CREATE_FAILED", message=str(e))
-
-    class UpdateUserBody(BaseModel):
-        role: str = None
-        enabled: bool = None
-        display_name: str = None
-        password: str = None
-
-    @app.put("/api/users/{username}")
-    async def update_user(username: str, body: UpdateUserBody,
-                          _=Depends(require_permission("admin:users"))):
-        """更新用户信息（需要 admin:users 权限）"""
-        mgr = get_user_manager()
-        try:
-            user = mgr.update_user(
-                username=username,
-                role=body.role,
-                enabled=body.enabled,
-                display_name=body.display_name,
-                password=body.password,
-            )
-            if not user:
-                return error_response("USER_NOT_FOUND", message=f"用户不存在: {username}")
-            return {"status": "ok", "user": user.to_dict()}
-        except ValueError as e:
-            return error_response("USER_UPDATE_FAILED", message=str(e))
-
-    @app.delete("/api/users/{username}")
-    async def delete_user(username: str,
-                          _=Depends(require_permission("admin:users"))):
-        """删除用户（需要 admin:users 权限）"""
-        mgr = get_user_manager()
-        try:
-            if mgr.delete_user(username):
-                return {"status": "ok", "message": f"用户 {username} 已删除"}
-            return error_response("USER_NOT_FOUND", message=f"用户不存在: {username}")
-        except ValueError as e:
-            return error_response("USER_DELETE_FAILED", message=str(e))
-
-    @app.get("/api/users/me")
-    async def current_user(token=Depends(verify_token)):
-        """获取当前用户信息"""
-        mgr = get_user_manager()
-        user = mgr.get_user(token.sub)
-        if not user:
-            return error_response("USER_NOT_FOUND")
-        result = user.to_dict()
-        result["permissions"] = sorted(list(
-            __import__("backend.security.rbac", fromlist=["ROLE_PERMISSIONS"]).ROLE_PERMISSIONS.get(user.role, set())
-        ))
-        return result
+    # 本机直连模式不进行用户/RBAC 校验。依赖占位函数保留路由声明的结构，
+    # 以免在无登录模式下散落的 API 声明需要重复改写。
+    def require_permission(_permission: str):
+        async def local_console_only():
+            return None
+        return local_console_only
 
     # ═══════════════════════ 健康检查 API ═══════════════════════
 
     @app.get("/api/health/live")
     async def liveness():
         """进程存活探针，不依赖外部 Provider。"""
-        return {"status": "ok", "service": "secagentx", "version": "3.1.0"}
+        return {"status": "ok", "service": "secagentx", "version": "4.0.0"}
 
     @app.get("/api/health/ready")
     async def readiness():
@@ -684,7 +346,7 @@ def create_app() -> Optional[FastAPI]:
                 raise RuntimeError("orchestrator unavailable")
             async with get_repository() as repo:
                 await repo.fetch_one("SELECT COUNT(*) as cnt FROM events")
-            return {"status": "ready", "service": "secagentx", "version": "3.1.0"}
+            return {"status": "ready", "service": "secagentx", "version": "4.0.0"}
         except Exception:
             return JSONResponse(
                 status_code=503,
@@ -697,7 +359,7 @@ def create_app() -> Optional[FastAPI]:
         checks = {
             "status": "ok",
             "service": "secagentx",
-            "version": "3.1.0",
+            "version": "4.0.0",
             "timestamp": __import__("datetime").datetime.now(
                 __import__("datetime").timezone.utc
             ).isoformat(),
@@ -1342,18 +1004,19 @@ def create_app() -> Optional[FastAPI]:
             event = _format_event_detail(dict(row))
             return event
 
-    # ==================== 处置 API（供 IM 桥接器调用） ====================
+    # ==================== 本机人工处置 API ====================
     class DispatchBody(BaseModel):
         action: str  # block / unblock / confirm / ignore / escalate / status
         ip: str = ""
         event_id: str = ""
         duration_minutes: int = 120
         reason: str = ""
+        confirmed: bool = False  # 高风险动作必须由本机操作员显式确认
 
     @app.post("/api/dispatch")
-    async def dispatch(body: DispatchBody, token=Depends(verify_token)):
+    async def dispatch(body: DispatchBody):
         """
-        安全处置统一入口（IM 桥接器调用）
+        安全处置统一入口（本机控制台调用）
 
         动作:
           block    <ip>          — 封禁 IP（默认 120 分钟）
@@ -1363,19 +1026,26 @@ def create_app() -> Optional[FastAPI]:
           escalate <event_id>    — 升级事件（状态→escalated）
           status   [ip]          — 查询封禁状态
 
-        认证: JWT（需 events:write / firewall:block 权限）
+        仅本机控制台可访问；防火墙仍保留白名单、熔断器和后端开关保护。
         """
         action = (body.action or "").lower()
         ip = (body.ip or "").strip()
         event_id = (body.event_id or "").strip()
         from backend.security.dispatch import permission_for_dispatch
-        from backend.security.rbac import enforce_permission
         try:
-            required_permission = permission_for_dispatch(action)
+            # 保留动作白名单校验；无登录的本机模式不再有账户级权限判断。
+            permission_for_dispatch(action)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        current_user = enforce_permission(token, required_permission)
-        operator = current_user.username
+        operator = "local-console"
+
+        # 封禁/解封会改变外部网络状态。即使请求来自回环地址，也不能由模型
+        # 或脚本默默触发；调用方必须在同一请求中明确声明人工确认。
+        if action in {"block", "unblock"} and not body.confirmed:
+            raise HTTPException(
+                status_code=409,
+                detail="高风险处置需要本机操作员确认：请在确认对话框中再次提交。",
+            )
 
         # ─── 封禁 IP ───
         if action == "block":
@@ -1386,9 +1056,9 @@ def create_app() -> Optional[FastAPI]:
                 if not fw_tool:
                     return {"success": False, "error": "防火墙工具未初始化"}
                 from backend.tools.firewall import FirewallExecutionContext
-                authorization_context = FirewallExecutionContext.authenticated_api(
+                authorization_context = FirewallExecutionContext.local_console(
+                    action="block",
                     actor=operator,
-                    permission=required_permission,
                     reason=body.reason or "IM 人工处置",
                 )
                 result = await fw_tool.execute(
@@ -1420,9 +1090,9 @@ def create_app() -> Optional[FastAPI]:
                 if not fw_tool:
                     return {"success": False, "error": "防火墙工具未初始化"}
                 from backend.tools.firewall import FirewallExecutionContext
-                authorization_context = FirewallExecutionContext.authenticated_api(
+                authorization_context = FirewallExecutionContext.local_console(
+                    action="unblock",
                     actor=operator,
-                    permission=required_permission,
                     reason=body.reason or "IM 人工解封",
                 )
                 result = await fw_tool.execute(
@@ -1483,13 +1153,11 @@ def create_app() -> Optional[FastAPI]:
 
     # ==================== 轨迹数据（Trajectory） ====================
     @app.get("/api/conversations")
-    async def list_conversations_api(
-        limit: int = 50, token_data=Depends(verify_token)
-    ):
+    async def list_conversations_api(limit: int = 50):
         """获取会话列表（供轨迹页下拉选择）"""
         from backend.storage.repositories.conversation_repo import ConversationRepository
         async with get_repository() as repo_db:
-            repo = ConversationRepository(repo_db, owner_id=token_data.sub)
+            repo = ConversationRepository(repo_db, owner_id="local")
             rows = await repo.list_conversations(limit=limit)
             conversations = []
             for r in rows:
@@ -1502,23 +1170,22 @@ def create_app() -> Optional[FastAPI]:
             return {"conversations": conversations}
 
     @app.get("/api/trajectory/stats")
-    async def trajectory_stats(token_data=Depends(verify_token)):
+    async def trajectory_stats():
         """轨迹聚合统计（供轨迹界面顶部卡片）"""
         from backend.storage.repositories.trajectory_repo import TrajectoryRepository
         async with get_repository() as repo_db:
-            repo = TrajectoryRepository(repo_db, owner_id=token_data.sub)
+            repo = TrajectoryRepository(repo_db, owner_id="local")
             return await repo.get_stats()
 
     @app.get("/api/trajectory")
     async def list_trajectories(
         conversation_id: str = "",
         limit: int = 50,
-        token_data=Depends(verify_token),
     ):
         """查询轨迹记录（可选按会话过滤）"""
         from backend.storage.repositories.trajectory_repo import TrajectoryRepository
         async with get_repository() as repo_db:
-            repo = TrajectoryRepository(repo_db, owner_id=token_data.sub)
+            repo = TrajectoryRepository(repo_db, owner_id="local")
             cid = conversation_id.strip() or None
             try:
                 rows = await repo.get_trajectories(conversation_id=cid, limit=limit)
@@ -1527,13 +1194,11 @@ def create_app() -> Optional[FastAPI]:
             return {"trajectories": rows}
 
     @app.get("/api/trajectory/{conversation_id}")
-    async def get_conversation_trajectory_api(
-        conversation_id: str, token_data=Depends(verify_token)
-    ):
+    async def get_conversation_trajectory_api(conversation_id: str):
         """获取指定会话的完整轨迹（合并同会话多条记录为一条时间线）"""
         from backend.storage.repositories.trajectory_repo import TrajectoryRepository
         async with get_repository() as repo_db:
-            repo = TrajectoryRepository(repo_db, owner_id=token_data.sub)
+            repo = TrajectoryRepository(repo_db, owner_id="local")
             try:
                 return await repo.get_conversation_trajectory(conversation_id)
             except PermissionError:
@@ -1841,8 +1506,7 @@ def create_app() -> Optional[FastAPI]:
         每次用户消息会从数据库加载历史上下文，并将本轮对话保存到数据库，
         实现多轮对话的连贯性。
 
-        认证方式: 通过 query param 传递 JWT Token
-          ws://host/ws/chat?token=xxx
+        本机控制台无需令牌；CLI 强制绑定回环地址。
         """
         ws_id = uuid.uuid4().hex[:8]
 
@@ -1853,27 +1517,6 @@ def create_app() -> Optional[FastAPI]:
             await websocket.close(code=4003, reason="WebSocket Origin 不在允许列表")
             return
 
-        # ═══════════ WebSocket 认证（在 accept() 之前完成） ═══════════
-        try:
-            # Web 优先使用 HttpOnly Cookie；query token 仅保留给旧版或非浏览器客户端。
-            from backend.security.auth import WEB_ACCESS_COOKIE
-            token = websocket.cookies.get(WEB_ACCESS_COOKIE, "") or websocket.query_params.get("token", "")
-            if not token:
-                await websocket.close(code=4001, reason="缺少认证令牌")
-                return
-            from backend.security.auth import verify_token, validate_live_token_data
-            from fastapi.security import HTTPAuthorizationCredentials
-            credentials = HTTPAuthorizationCredentials(scheme="bearer", credentials=token)
-            token_data = await verify_token(credentials)
-        except Exception as e:
-            err_str = str(e)
-            reason = "令牌已过期" if "expired" in err_str.lower() else f"无效令牌: {err_str}"
-            try:
-                await websocket.close(code=4001, reason=reason)
-            except Exception:
-                pass
-            return
-
         await ws_manager.connect(ws_id, websocket)
 
         # 支持恢复历史对话：客户端可通过 query param 传入 conversation_id
@@ -1882,7 +1525,7 @@ def create_app() -> Optional[FastAPI]:
         # 初始化数据库和会话仓库（统一使用 Repository，自动适配 SQLite/PostgreSQL）
         from backend.storage.database import Repository
         repo_db = Repository()
-        repo = ConversationRepository(repo_db, owner_id=token_data.sub)
+        repo = ConversationRepository(repo_db, owner_id="local")
         # PostgreSQL 模式下不执行内联 DDL（由 Alembic 迁移管理）
         from backend.storage.database import _is_postgres
         if not _is_postgres():
@@ -1915,13 +1558,6 @@ def create_app() -> Optional[FastAPI]:
         try:
             while True:
                 data = await websocket.receive_json()
-
-                # 长连接不能绕过 access token 过期、禁用或角色/密码变更。
-                try:
-                    validate_live_token_data(token_data)
-                except HTTPException as exc:
-                    await websocket.close(code=4001, reason=str(exc.detail))
-                    return
 
                 # ═══════════════════ 心跳检测 ═══════════════════
                 if data.get("type") == "ping":
@@ -2018,6 +1654,11 @@ if __name__ == "__main__":
     import uvicorn
     app = create_app()
     if app:
-        host = os.getenv("SECAGENTX_HOST", "0.0.0.0")
+        host = os.getenv("SECAGENTX_HOST", "127.0.0.1").strip().lower()
+        if host not in {"127.0.0.1", "localhost", "::1"}:
+            logger.error(
+                "无登录模式仅允许本机回环监听；请使用 127.0.0.1、localhost 或 ::1。"
+            )
+            sys.exit(2)
         port = int(os.getenv("SECAGENTX_PORT", "8000"))
         uvicorn.run(app, host=host, port=port)

@@ -13,8 +13,6 @@ SENSITIVE_PATTERNS = [
     (r'(VT_API_KEY=).*', r'\1***REDACTED***'),
     (r'(OTX_API_KEY=).*', r'\1***REDACTED***'),
     (r'(ABUSEIPDB_API_KEY=).*', r'\1***REDACTED***'),
-    (r'(SECAGENTX_PASSWORD=).*', r'\1***REDACTED***'),
-    (r'(SECAGENTX_JWT_SECRET=).*', r'\1***REDACTED***'),
     # sk- 开头的 OpenAI/DeepSeek 风格 key
     (r'(sk-[a-zA-Z0-9]{10,})', '***REDACTED_API_KEY***'),
     # JWT Token（eyJ 开头，base64url 编码的三段式）
@@ -29,4 +27,3 @@ def sanitize_error(msg: str) -> str:
     for pattern, replacement in SENSITIVE_PATTERNS:
         msg = re.sub(pattern, replacement, msg, flags=re.IGNORECASE)
     return msg
-

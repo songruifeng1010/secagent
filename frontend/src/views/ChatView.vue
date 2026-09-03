@@ -494,6 +494,17 @@
         <div v-else class="msg-system">
           <span class="sys-text">{{ typeof msg.content === 'string' ? msg.content : (msg.content?.content || '') }}</span>
         </div>
+
+        <button
+          v-if="isCopyable(msg)"
+          class="copy-message-btn"
+          :class="{ copied: copiedMessageId === msg.id }"
+          type="button"
+          :aria-label="copiedMessageId === msg.id ? '已复制' : '复制结果'"
+          @click="copyMessage(msg)"
+        >
+          {{ copiedMessageId === msg.id ? '已复制' : '复制' }}
+        </button>
       </div>
 
       <!-- 处理中指示 -->
@@ -507,7 +518,7 @@
     <div class="ws-status-bar" :class="'ws-' + wsStatus">
       <span class="ws-dot" />
       <span class="ws-label">{{ wsStatusText }}</span>
-      <span v-if="wsReconnectAttempts > 0" class="ws-retry">重试 {{ wsReconnectAttempts }}/{{ MAX_RECONNECT_ATTEMPTS }}</span>
+      <span class="ws-boundary">本机控制台 · 无登录 · 仅本机访问</span>
     </div>
 
     <!-- 输入区域 -->
@@ -517,7 +528,7 @@
           ref="inputRef"
           v-model="inputText"
           class="chat-input"
-          placeholder="输入安全问题，按 Enter 发送..."
+          placeholder="输入安全问题；Enter 发送，Shift + Enter 换行"
           :disabled="chatStore.isProcessing"
           rows="1"
           @keydown.enter.exact.prevent="sendMessage"
@@ -534,13 +545,14 @@
           <div v-else class="send-spinner" />
         </button>
       </div>
+      <div class="input-hint">分析结果仅供辅助研判；涉及封禁、隔离等动作前请先人工确认。</div>
     </div>
     </div><!-- /chat-main -->
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed, nextTick, watch } from 'vue'
+import { ref, reactive, computed, nextTick, watch, onMounted } from 'vue'
 import { useChatStore } from '../stores/chat.js'
 import { marked } from 'marked'
 
@@ -554,6 +566,7 @@ const chatStore = useChatStore()
 const inputText = ref('')
 const msgContainer = ref(null)
 const inputRef = ref(null)
+const copiedMessageId = ref('')
 
 // ─── 会话管理（新建 / 恢复历史） ───
 function handleNewConversation() {
@@ -564,19 +577,12 @@ function handleResumeConversation(convId) {
 }
 
 // 挂载时加载历史会话列表
-import { onMounted } from 'vue'
 onMounted(() => {
   chatStore.fetchConversations()
 })
 
-// 从 localStorage 读取用户首字母作为头像
-const userInitial = (() => {
-  try {
-    const u = JSON.parse(localStorage.getItem('secagentx_user') || '{}')
-    const name = u.display_name || u.username || 'U'
-    return name.charAt(0).toUpperCase()
-  } catch { return 'U' }
-})()
+// 本机控制台不维护账户资料；使用固定标识，避免遗留旧登录态。
+const userInitial = '本'
 
 // ─── 连接状态（来自 store 的统一 WebSocket） ───
 const wsStatus = computed(() =>
@@ -596,6 +602,37 @@ function sendMessage() {
 }
 function sendQuick(text) { inputText.value = text; sendMessage() }
 function resetInputHeight() { if (inputRef.value) inputRef.value.style.height = 'auto' }
+
+function isCopyable(msg) {
+  return msg.role === 'agent' || msg.role === 'structured_result' || msg.role === 'cot_complete'
+}
+
+function messageText(msg) {
+  if (typeof msg.content === 'string') return msg.content
+  const content = msg.content || {}
+  return content.summary_text || content.content || content.summarized || JSON.stringify(content, null, 2)
+}
+
+async function copyMessage(msg) {
+  const text = messageText(msg)
+  try {
+    await navigator.clipboard.writeText(text)
+  } catch {
+    const fallback = document.createElement('textarea')
+    fallback.value = text
+    fallback.setAttribute('readonly', '')
+    fallback.style.position = 'fixed'
+    fallback.style.opacity = '0'
+    document.body.appendChild(fallback)
+    fallback.select()
+    document.execCommand('copy')
+    fallback.remove()
+  }
+  copiedMessageId.value = msg.id
+  window.setTimeout(() => {
+    if (copiedMessageId.value === msg.id) copiedMessageId.value = ''
+  }, 1600)
+}
 
 // ─── 自动滚动 ───
 watch(() => chatStore.messages.length, async () => { await nextTick(); if (msgContainer.value) msgContainer.value.scrollTop = msgContainer.value.scrollHeight })
@@ -782,7 +819,10 @@ function renderMarkdown(text) {
 .quick-replies { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
 .quick-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; background: var(--bg-card); border: 1px solid var(--border-primary); border-radius: var(--radius-full); color: var(--text-tertiary); font-size: 12px; font-weight: 500; cursor: pointer; transition: all var(--transition-fast); }
 .quick-btn:hover { border-color: var(--accent); color: var(--accent-hover); background: var(--accent-subtle); }
-.msg-item { margin-bottom: 16px; animation: count-up 0.3s ease; }
+.msg-item { position: relative; margin-bottom: 16px; animation: count-up 0.3s ease; }
+.copy-message-btn { position: absolute; right: 2px; bottom: -2px; padding: 3px 7px; border: 1px solid var(--border-primary); border-radius: 5px; background: var(--bg-card); color: var(--text-muted); font-size: 10px; cursor: pointer; opacity: 0; transition: opacity var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast); }
+.msg-item:hover .copy-message-btn, .copy-message-btn:focus-visible { opacity: 1; }
+.copy-message-btn:hover, .copy-message-btn.copied { color: var(--success); border-color: var(--success); }
 .msg-user { display: flex; justify-content: flex-end; }
 .msg-bubble { display: flex; gap: 10px; max-width: 75%; }
 .bubble-avatar { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0; margin-top: 4px; }
@@ -1057,7 +1097,7 @@ function renderMarkdown(text) {
 .ws-status-bar { display: flex; align-items: center; gap: 8px; padding: 4px 20px; border-top: 1px solid var(--border-primary); font-size: 11px; transition: all var(--transition-fast); }
 .ws-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; transition: background 0.3s; }
 .ws-label { color: var(--text-muted); }
-.ws-retry { color: var(--warning); font-size: 10px; margin-left: auto; }
+.ws-boundary { color: var(--text-muted); font-size: 10px; margin-left: auto; }
 .ws-connected .ws-dot { background: var(--success); box-shadow: 0 0 4px rgba(34,197,94,0.4); }
 .ws-connected .ws-label { color: var(--success); }
 .ws-connecting .ws-dot { background: var(--warning); animation: pulse-dot 1s infinite; }
@@ -1084,6 +1124,7 @@ function renderMarkdown(text) {
 .send-btn.active:hover { background: var(--accent-hover); box-shadow: var(--shadow-glow-red); }
 .send-btn:disabled { cursor: not-allowed; opacity: 0.4; }
 .send-spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.8s linear infinite; }
+.input-hint { margin-top: 7px; color: var(--text-muted); font-size: 10px; line-height: 1.4; }
 
 /* ═══ 响应式 ChatView ═══ */
 @media (max-width: 768px) {
@@ -1092,6 +1133,7 @@ function renderMarkdown(text) {
   .bubble-content { font-size: 13px !important; }
   .input-bar { padding: 8px 10px !important; }
   .input-wrapper { padding: 6px 10px !important; }
+  .input-hint { font-size: 9px; }
   .chat-input { font-size: 13px !important; }
   .empty-state { margin-top: 40px !important; }
   .empty-title { font-size: 18px !important; }

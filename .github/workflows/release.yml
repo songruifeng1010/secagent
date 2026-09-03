@@ -47,8 +47,11 @@ jobs:
           pytest -m "not slow" --timeout=60 --cov=backend --cov-report=term --cov-fail-under=60
           python scripts/quality/knowledge_health.py --strict --score
         env:
-          SECAGENTX_PASSWORD: SecAgentX-Release-Test-Only-2026!
-          SECAGENTX_JWT_SECRET: secagentx-release-test-secret-at-least-32-chars
+          SECAGENTX_ACTIVE_PROVIDER: mock
+          SECAGENTX_LLM_PROVIDER_ID: mock
+          SECAGENTX_LLM_API_BASE: mock://local
+          SECAGENTX_LLM_MODEL: mock-llm
+          SECAGENTX_LLM_ALLOW_NO_KEY: "true"
           FIREWALL_BACKEND: mock
 
       - name: Test and build frontend
@@ -90,8 +93,6 @@ jobs:
           npx playwright install --with-deps chromium
           npm run test:e2e
         env:
-          SECAGENTX_PASSWORD: SecAgentX-Release-Test-Only-2026!
-          SECAGENTX_JWT_SECRET: secagentx-release-test-secret-at-least-32-chars
           FIREWALL_BACKEND: mock
 
       - name: Build source and wheel distributions

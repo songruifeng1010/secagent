@@ -59,12 +59,12 @@ def test_ui_init_refuses_nonempty_target(tmp_path):
     assert (target / "mine.txt").read_text(encoding="utf-8") == "keep"
 
 
-def test_remote_bind_requires_explicit_confirmation():
+def test_remote_bind_is_rejected_in_local_console_mode():
     args = argparse.Namespace(
-        host="0.0.0.0", allow_remote=False, non_interactive=True,
+        host="0.0.0.0", non_interactive=True,
         ui="", port=8000, no_open=True, log_level="info",
     )
-    with pytest.raises(ValueError, match="--allow-remote"):
+    with pytest.raises(ValueError, match="只允许监听本机回环地址"):
         cli_app._serve(args, open_browser=False)
 
 

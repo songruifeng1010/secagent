@@ -70,13 +70,13 @@ class TestRateLimiter:
         from backend.security.ratelimit import ratelimiter
 
         for _ in range(5):
-            allowed, _ = await ratelimiter.check("/api/auth/login", "5.6.7.8")
+            allowed, _ = await ratelimiter.check("/api/agents", "5.6.7.8")
             assert allowed is True
 
         # 超过限制（burst=10, 但 rate=5/s）
         # 由于时间推移可能会补充令牌，不能保证第6次一定失败
         # 我们只验证函数不会崩溃
-        allowed, retry_after = await ratelimiter.check("/api/auth/login", "5.6.7.8")
+        allowed, retry_after = await ratelimiter.check("/api/agents", "5.6.7.8")
         assert isinstance(allowed, bool)
         assert isinstance(retry_after, int)
 

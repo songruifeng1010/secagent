@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import getpass
 import json
 import os
 import shutil
@@ -29,7 +28,6 @@ from backend.config.provider_profiles import (
     ProviderProfileStore,
     activate_profile,
 )
-from backend.config.runtime_settings import RuntimeSettingsStore
 from backend.runtime_assets import config_path, frontend_dir, frontend_dist, resource_root
 
 PROJECT_ROOT = resource_root()
@@ -40,7 +38,7 @@ def _version() -> str:
         from importlib.metadata import version
         return version("secagentx")
     except Exception:
-        return "3.1.0"
+        return "4.0.0"
 
 
 def _has_legacy_provider() -> bool:
@@ -181,25 +179,6 @@ async def _verify_profile(profile: ProviderProfile, secret: str) -> str:
         await provider.close()
 
 
-def _configure_web_credentials(non_interactive: bool = False) -> None:
-    store = RuntimeSettingsStore()
-    if store.web_ready():
-        return
-    if non_interactive or not sys.stdin.isatty():
-        raise RuntimeError(
-            "Web 首次启动需要管理员凭据。请运行 secagentx onboard，"
-            "或设置 SECAGENTX_PASSWORD 和 SECAGENTX_JWT_SECRET。"
-        )
-    print("\n配置 Web 管理员（密码不会写入明文配置）")
-    password = getpass.getpass("管理员密码（至少 12 字符）: ")
-    confirm = getpass.getpass("再次输入管理员密码: ")
-    if password != confirm:
-        raise ValueError("两次密码输入不一致")
-    store.configure_web_credentials(password)
-    store.activate()
-    print("Web 管理员凭据已安全保存。")
-
-
 def cmd_onboard(args: argparse.Namespace) -> int:
     if not args.accept_risk and args.non_interactive:
         print("非交互 onboarding 必须显式传入 --accept-risk。", file=sys.stderr)
@@ -228,8 +207,6 @@ def cmd_onboard(args: argparse.Namespace) -> int:
         activate_profile(profile, secret or store.get_secret(profile))
         print(f"已保存活动 Provider：{profile.profile_id} ({profile.label})")
 
-        if not args.skip_web and not args.non_interactive and _confirm("现在配置 Web 管理员", True):
-            _configure_web_credentials()
         print("\n配置完成。运行 secagentx 进入 CLI，或运行 secagentx dashboard 打开 Web 控制台。")
         return 0
     except (ValueError, CredentialStoreError, OSError, RuntimeError) as exc:
@@ -278,12 +255,10 @@ def _wait_and_open(url: str) -> None:
 
 def _serve(args: argparse.Namespace, open_browser: bool) -> int:
     loopback_hosts = {"127.0.0.1", "localhost", "::1"}
-    if args.host.strip().lower() not in loopback_hosts and not args.allow_remote:
+    if args.host.strip().lower() not in loopback_hosts:
         raise ValueError(
-            "拒绝默认暴露到远程网络；如已配置防火墙、反向代理和 TLS，"
-            "请显式添加 --allow-remote"
+            "无登录模式只允许监听本机回环地址：127.0.0.1、localhost 或 ::1"
         )
-    _configure_web_credentials(non_interactive=args.non_interactive)
     if getattr(args, "ui", ""):
         ui_path = Path(args.ui).expanduser().resolve()
         if not (ui_path / "index.html").is_file():
@@ -460,10 +435,6 @@ def build_parser() -> argparse.ArgumentParser:
         serve = sub.add_parser(name, help=help_text)
         serve.add_argument("--host", default="127.0.0.1")
         serve.add_argument("--port", type=int, default=8000)
-        serve.add_argument(
-            "--allow-remote", action="store_true",
-            help="确认允许监听非回环地址（生产环境仍应配置 TLS/防火墙）",
-        )
         serve.add_argument("--ui", default="", help="自定义前端 dist 目录")
         serve.add_argument("--no-open", action="store_true")
         serve.add_argument("--non-interactive", action="store_true")

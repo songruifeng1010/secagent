@@ -51,11 +51,12 @@ export default defineConfig({
     },
   },
   server: {
-    host: '0.0.0.0',
-    port: 3000,
+    // 控制台已取消登录，开发服务器也只接受本机连接。
+    host: '127.0.0.1',
+    port: Number(process.env.E2E_UI_PORT || 3000),
     proxy: {
-      '/api': { target: 'http://localhost:8000', changeOrigin: true },
-      '/ws': { target: 'ws://localhost:8000', ws: true },
+      '/api': { target: `http://127.0.0.1:${process.env.E2E_API_PORT || 8000}`, changeOrigin: true },
+      '/ws': { target: `ws://127.0.0.1:${process.env.E2E_API_PORT || 8000}`, ws: true },
     },
   },
 })

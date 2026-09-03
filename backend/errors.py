@@ -90,14 +90,6 @@ except ImportError:
 
 
 ERROR_CODES = {
-    # ─── 认证相关 (AUTH-*) ───
-    "AUTH_TOKEN_MISSING":       (401, "缺少认证令牌"),
-    "AUTH_TOKEN_EXPIRED":       (401, "令牌已过期"),
-    "AUTH_TOKEN_INVALID":       (401, "无效令牌"),
-    "AUTH_WRONG_CREDENTIALS":   (401, "用户名或密码错误"),
-    "AUTH_FORBIDDEN":           (403, "权限不足"),
-    "AUTH_PASSWORD_NOT_SET":    (500, "未配置安全的管理员凭据，请设置 SECAGENTX_PASSWORD 或 SECAGENTX_PASSWORD_HASH"),
-
     # ─── 速率限制 (RATE-*) ───
     "RATE_LIMIT_EXCEEDED":      (429, "请求过于频繁，请稍后重试"),
 
@@ -106,9 +98,6 @@ ERROR_CODES = {
     "RES_ALREADY_EXISTS":       (409, "资源已存在"),
     "RES_EVENT_NOT_FOUND":      (404, "事件不存在"),
     "RES_TECHNIQUE_NOT_FOUND":  (404, "MITRE ATT&CK 技术不存在"),
-
-    # ─── WebSocket (WS-*) ───
-    "WS_TOKEN_REQUIRED":        (401, "WebSocket 需要 token 参数 (ws://host/ws/chat?token=xxx)"),
 
     # ─── 自动操作 (AUTO-*) ───
     "AUTO_NOT_ENABLED":         (400, "零人工干预模式未启用（需在 config.yaml 设置 auto_operation.enabled=true）"),

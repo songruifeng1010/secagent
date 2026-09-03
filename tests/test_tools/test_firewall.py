@@ -154,12 +154,12 @@ async def test_llm_cannot_supply_confidence_override():
 
 
 @pytest.mark.asyncio
-async def test_authenticated_api_can_override_confidence_only():
-    """通过 RBAC 的服务端调用可跳过置信度，但不能跳过其他策略。"""
+async def test_local_console_can_override_confidence_only():
+    """经人工确认的本机控制台可跳过置信度，但不能跳过其他策略。"""
     tool = FirewallTool(block_threshold=0.70, whitelist=[])
-    context = FirewallExecutionContext.authenticated_api(
-        actor="operator-1",
-        permission="firewall:block",
+    context = FirewallExecutionContext.local_console(
+        action="block",
+        actor="local-console",
         reason="人工确认",
     )
     result = await tool.execute(

@@ -45,6 +45,14 @@
           <n-tag :type="statusMapType(event.status)" size="medium" :bordered="false">
             {{ statusLabel(event.status) }}
           </n-tag>
+          <div style="display:flex; gap:8px; flex-wrap:wrap; margin-left:8px;">
+            <n-button size="small" :loading="dispatching" @click="dispatchEvent('confirm')">确认事件</n-button>
+            <n-button size="small" type="warning" :loading="dispatching" @click="dispatchEvent('escalate')">升级处置</n-button>
+            <n-button v-if="event.source_ip" size="small" type="error" :loading="dispatching" @click="confirmFirewallBlock">封禁来源 IP</n-button>
+          </div>
+        </div>
+        <div style="margin-top:12px; color:#94a3b8; font-size:11px; line-height:1.5;">
+          事件状态更新由本机控制台直接记录；封禁会弹出二次确认，且仍受防火墙白名单、熔断器和后端开关约束。
         </div>
       </n-card>
 
@@ -315,14 +323,16 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { useMessage } from 'naive-ui'
+import { useDialog, useMessage } from 'naive-ui'
 import { apiFetch } from '../utils/http.js'
 
 const route = useRoute()
 const message = useMessage()
+const dialog = useDialog()
 
 const loading = ref(true)
 const event = ref(null)
+const dispatching = ref(false)
 
 const iocList = computed(() => {
   if (!event.value) return []
@@ -342,8 +352,8 @@ function textSeverityColor(level) { return severityColor(level) }
 function severityMapColor(level) {
   return { critical: 'error', high: 'error', medium: 'warning', low: 'success', '紧急': 'error', '高危': 'error', '中危': 'warning', '低危': 'success' }[level] || 'default'
 }
-function statusMapType(status) { return { open: 'error', investigating: 'warning', resolved: 'success', closed: 'default' }[status] || 'default' }
-function statusLabel(status) { return { open: '待处理', investigating: '调查中', resolved: '已解决', closed: '已关闭' }[status] || status || '未知' }
+function statusMapType(status) { return { open: 'error', investigating: 'warning', confirmed: 'info', escalated: 'warning', blocked: 'error', ignored: 'default', resolved: 'success', closed: 'default' }[status] || 'default' }
+function statusLabel(status) { return { open: '待处理', investigating: '调查中', confirmed: '已确认', escalated: '已升级', blocked: '已封禁', ignored: '已忽略', resolved: '已解决', closed: '已关闭' }[status] || status || '未知' }
 function confidenceBarColor(value) { return Number(value) >= 0.8 ? '#22c55e' : Number(value) >= 0.5 ? '#eab308' : '#ef4444' }
 function confidenceTextColor(value) { return confidenceBarColor(value) }
 function iocColor(type) { return { ip: '#60a5fa', domain: '#c084fc', hash: '#f59e0b', url: '#34d399' }[type] || '#94a3b8' }
@@ -355,6 +365,50 @@ function openMitre(techniqueId) {
   if (/^T\d{4}(?:\.\d{3})?$/.test(String(techniqueId || ''))) {
     window.open(`https://attack.mitre.org/techniques/${techniqueId.replace('.', '/')}/`, '_blank', 'noopener,noreferrer')
   }
+}
+
+async function submitDispatch(payload, successText) {
+  dispatching.value = true
+  try {
+    const result = await apiFetch('/api/dispatch', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+    if (!result.success) throw new Error(result.error || '处置未完成')
+    message.success(successText || result.message || '处置已记录')
+    await fetchEvent(route.params.id)
+  } catch (error) {
+    message.error(error.message || '处置失败')
+  } finally {
+    dispatching.value = false
+  }
+}
+
+function dispatchEvent(action) {
+  const labels = { confirm: '确认', escalate: '升级' }
+  void submitDispatch({
+    action,
+    event_id: event.value.id,
+    reason: `本机控制台人工${labels[action] || '处置'}事件`,
+  }, `事件已${labels[action] || '处理'}`)
+}
+
+function confirmFirewallBlock() {
+  const ip = event.value?.source_ip
+  if (!ip) return
+  dialog.warning({
+    title: '确认封禁来源 IP',
+    content: `将封禁 ${ip} 120 分钟。此操作会改变网络访问规则；请确认它不是白名单或业务地址。`,
+    positiveText: '确认封禁',
+    negativeText: '取消',
+    onPositiveClick: () => submitDispatch({
+      action: 'block',
+      ip,
+      duration_minutes: 120,
+      reason: `本机控制台人工确认：事件 ${event.value.id}`,
+      confirmed: true,
+    }, `已提交 ${ip} 的封禁操作`),
+  })
 }
 // 事件详情只展示后端持久化的真实事件；失败时保留空状态。
 async function fetchEvent(id) {

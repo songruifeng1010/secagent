@@ -4,14 +4,11 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "${SECAGENTX_PORT:-8000}:8000"
+      - "127.0.0.1:${SECAGENTX_PORT:-8000}:8000"
     environment:
-      SECAGENTX_HOST: 0.0.0.0
+      SECAGENTX_HOST: 127.0.0.1
       SECAGENTX_PORT: 8000
-      SECAGENTX_PASSWORD: "${SECAGENTX_PASSWORD:?Set SECAGENTX_PASSWORD to a strong value of at least 12 characters}"
-      SECAGENTX_JWT_SECRET: "${SECAGENTX_JWT_SECRET:?Set SECAGENTX_JWT_SECRET to a random value of at least 32 characters}"
       SECAGENTX_ALLOWED_HOSTS: "${SECAGENTX_ALLOWED_HOSTS:-}"
-      SECAGENTX_COOKIE_SECURE: "${SECAGENTX_COOKIE_SECURE:-false}"
       SECAGENTX_FORCE_HSTS: "${SECAGENTX_FORCE_HSTS:-false}"
       DATABASE_URL: "postgresql+asyncpg://secagentx:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD to a strong random value}@postgres:5432/secagentx"
       FIREWALL_BACKEND: "${FIREWALL_BACKEND:-disabled}"

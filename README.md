@@ -1,4 +1,4 @@
-# SecAgentX · 企业安全智能体 v3.1.0
+# SecAgentX · 本机安全智能体 v4.0.0
 
 多智能体协同安全检测系统，支持 OpenAI / Anthropic 兼容协议及主流云端、本地模型，采用 **Agentic-RAG** 实现知识增强检索，并支持默认关闭、按需启用的自动威胁响应。
 
@@ -34,12 +34,20 @@ source .venv/bin/activate
 
 # Windows PowerShell 改用：.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-python -m pip install -e .
+python -m pip install .
 
 # 首次配置真实模型，随后启动 Web 控制台
 secagentx onboard
 secagentx dashboard
 ```
+
+`git clone` 是 Git 与网络连接的步骤，尚未进入 SecAgentX 的构建流程。若出现 `Failed to connect to github.com:443`，请先检查网络、代理或防火墙；已在 GitHub 账户配置 SSH Key 的用户可改用 GitHub 的 443 SSH 入口：
+
+```bash
+git clone ssh://git@ssh.github.com:443/songruifeng1010/secagent.git
+```
+
+普通使用者应使用 `python -m pip install .`，它会构建并安装项目；只有需要修改源代码时才使用 `python -m pip install -e .`。从 GitHub 直接安装也可使用 `pipx install "git+https://github.com/songruifeng1010/secagent.git"`，但同样依赖本机能访问 GitHub 和 Python 软件源。
 
 只验证本地启动链路、不调用真实模型时，可先设置 `LLM_PROVIDER=mock`。Web 控制台默认仅监听 `127.0.0.1:8000`。
 
@@ -48,8 +56,7 @@ secagentx dashboard
 ```bat
 cd /d C:\path\to\secagent
 py -3 -m venv .venv
-.venv\Scripts\python.exe -m pip install -r requirements.txt
-.venv\Scripts\python.exe -m pip install -e . --no-deps
+.venv\Scripts\python.exe -m pip install .
 
 rem 首次选择厂商、填写 API Key，并进行真实连通验证
 secagentx onboard
@@ -62,7 +69,7 @@ rem 启动并自动打开 Web 控制台
 secagentx dashboard
 ```
 
-API Key 默认保存到 Windows 用户级 DPAPI 加密凭据库（安装可选 `keyring` 后也可使用系统 Keyring），不会写入项目或明文 JSON。只有 Provider 完成一次真实请求验证后才会成为活动配置。Web 控制台使用 HttpOnly Cookie、一次性 refresh token 轮换和 CSRF 校验，浏览器不再把令牌写入 localStorage；CLI/API 客户端继续支持 Bearer Token。
+API Key 默认保存到 Windows 用户级 DPAPI 加密凭据库（安装可选 `keyring` 后也可使用系统 Keyring），不会写入项目或明文 JSON。只有 Provider 完成一次真实请求验证后才会成为活动配置。Web 控制台不需要账户、密码或令牌，且仅允许本机访问。
 
 内置预设包括 DeepSeek、通义千问、OpenAI、Anthropic、Azure OpenAI、Gemini、OpenRouter、xAI、Kimi、Ollama 和 LM Studio；其他厂商可选择“自定义 OpenAI/Anthropic 兼容接口”，填写 API Base 与模型 ID。运行 `secagentx providers` 查看档案，`secagentx providers --use PROFILE_ID` 切换。
 
@@ -77,20 +84,17 @@ API Key 默认保存到 Windows 用户级 DPAPI 加密凭据库（安装可选 `
 | 防火墙对接 | 适配器模式 | iptables / nftables / Cloud API 多种后端 |
 | 告警接入 |  Webhook / Kafka / Syslog | 三种接入方式均已实现 |
 | 数据库 |  PostgreSQL + SQLite | 环境变量切换，生产/开发灵活适配 |
-| 认证安全 | JWT + RBAC + 脱敏 | 企业级安全体系 |
+| 访问边界 | 仅本机回环监听 + 脱敏 | 无登录模式不对远程网络开放 |
 | 自动化 | 默认关闭 | 可配置自动闭环 / 封禁 / 升级 / 巡检，启用前应验证白名单和阈值 |
 | Docker 部署 | 核心服务 | SecAgentX 应用 + PostgreSQL |
 | 内置知识 | **1,674 NVD/CISA KEV + 365 MITRE + 14 合规 + 23 剧本** | 恶意 IP 缓存为可选下载数据，不是启动前置条件 |
-| 自动化测试 | 后端 + 前端测试套件 | 含单元测试、集成测试、认证隔离和前端测试；以当前验收输出为准 |
+| 自动化测试 | 后端 + 前端测试套件 | 含单元测试、集成测试和前端测试；以当前验收输出为准 |
 
 ---
 
 ## 生产部署（推荐 Docker）
 
 ```bash
-# 在项目根目录显式设置强凭据；Compose 不提供默认密码。
-export SECAGENTX_PASSWORD='replace-with-a-strong-password'
-export SECAGENTX_JWT_SECRET='replace-with-a-random-secret-at-least-32-chars'
 export POSTGRES_PASSWORD='replace-with-a-strong-random-postgres-password'
 docker compose up -d
 # 访问 http://localhost:8000
@@ -108,9 +112,6 @@ pip install -r requirements-ml.txt
 # 可选：阿里云、腾讯云、AWS 防火墙适配器
 pip install -r requirements-cloud.txt
 
-# 首次启动前配置管理员凭据（示例值请替换）
-export SECAGENTX_PASSWORD='replace-with-a-strong-password'
-
 # 启动 API 服务
 python3 -m backend.interface.api_server
 
@@ -120,7 +121,7 @@ cd frontend && npm ci && npm run dev
 
 ### 统一 CLI 与 Web 启动
 
-CLI 与 Web 服务使用同一套 Agent、认证隔离和知识库代码，可交互运行，也可输出机器可读 JSON：
+CLI 与 Web 服务使用同一套 Agent 和知识库代码，可交互运行，也可输出机器可读 JSON。Web 仅监听本机回环地址，无账户、密码或令牌认证：
 
 ```bash
 # 首次配置（会验证 Provider 后再保存）
@@ -158,7 +159,7 @@ npm run build
 secagentx dashboard --ui C:\work\my-secagentx-ui\dist
 ```
 
-`ui init` 不复制 `node_modules`、`dist` 或覆盖非空目录。监听非回环地址时必须显式添加 `--allow-remote`，并在企业环境配置 TLS 反向代理、防火墙和 `SECAGENTX_CORS_ORIGINS`。
+`ui init` 不复制 `node_modules`、`dist` 或覆盖非空目录。无登录模式不支持监听非回环地址，也不应通过反向代理暴露到其他设备或公网。
 
 ### 验证
 
@@ -223,7 +224,7 @@ cd frontend && npm test && npm run build
 |  **自动处置** | 自动闭环 / 封禁 / 升级 / 巡检 / 数据保留，默认关闭 |
 |  **可解释风险评分** | 行为证据 / 威胁情报 / IP真实性 / 历史信誉 四维加减分，最终分数 + 危级，逐规则可审计 |
 |  **告警接入** | Webhook / Kafka / Syslog 三种方式 |
-|  **企业安全** | JWT 认证 + RBAC 权限 + 熔断器 + 审计日志 + 限流 |
+|  **本机安全** | 回环监听 + 熔断器 + 审计日志 + 限流；不含账户体系 |
 |  **跨区域联邦** | 多区域事件/IP 同步，mesh 拓扑 |
 
 ---
@@ -254,7 +255,6 @@ python3 scripts/update_threat_ips.py
 
 | 分类 | 端点 | 说明 |
 |------|------|------|
-| **认证** | `/api/auth/login`, `/api/auth/refresh` | JWT 登录/刷新 |
 | **健康** | `/api/health`, `/api/stats`, `/api/metrics` | 系统状态 |
 | **事件** | `/api/events`, `/api/events/{id}` | 安全事件 CRUD |
 | **MITRE** | `/api/mitre/search`, `/api/mitre/technique/{id}`, `/api/mitre/kill-chain`, `/api/mitre/attack-flow` | ATT&CK 知识库 |
@@ -262,9 +262,13 @@ python3 scripts/update_threat_ips.py
 | **合规** | `/api/compliance/search`, `/api/compliance/{name}` | 法规库 |
 | **剧本** | `/api/remediation/search`, `/api/remediation/{scenario}` | 应急响应 |
 | **Agent** | `/api/agents`, `/api/agents/runtime` | 智能体运行时 |
+| **人工处置** | `POST /api/dispatch` | 确认、升级、忽略事件；封禁/解封必须显式传入 `confirmed: true` |
 | **联邦** | `/api/federation/status`, `/api/federation/events`, `/api/federation/blacklist` | 跨区域同步 |
-| **用户** | `/api/users`, `/api/users/{username}`, `/api/users/me` | 用户管理 |
 | **WebSocket** | `/ws/chat` | 实时对话 |
+
+### 人工处置安全边界
+
+事件确认、升级和忽略只会变更本地事件状态。封禁或解封 IP 是高风险网络动作：控制台必须先显示二次确认对话框，API 也会拒绝任何未带 `confirmed: true` 的请求；即使已经确认，防火墙白名单、熔断器、审计日志和 `FIREWALL_BACKEND` 开关仍会继续生效。默认 `FIREWALL_BACKEND=disabled`，不会执行真实网络变更。
 
 ---
 
@@ -280,7 +284,7 @@ secagentx/
 │   ├── ml_model/         # 可选 ML 训练与检测流水线
 │   ├── knowledge/        # MITRE / CVE / 合规 / 剧本 / 威胁情报
 │   ├── storage/          # PostgreSQL/SQLite + Chroma 向量库
-│   ├── security/         # 认证/脱敏/熔断器/审计/限流
+│   ├── security/         # 脱敏/熔断器/审计/限流
 │   ├── federation/       # 跨区域联邦同步
 │   └── interface/        # CLI + FastAPI + WebSocket
 ├── frontend/             # Vue 3 + Naive UI + ECharts (10 视图)
@@ -298,6 +302,7 @@ secagentx/
 
 | 版本 | 日期 | 说明 |
 |:----:|:----:|------|
+| v4.0.0 | 2026-09-03 | 移除登录、JWT、RBAC 与用户管理；控制台强制仅本机访问 |
 | v3.1.0 | 2026-08-23 | HttpOnly Web 会话/CSRF、bcrypt 迁移、AI 金标准评测、数据完整性与 CI 安全门禁 |
 | v3.0.0 | 2026-08-22 | 统一 CLI/onboarding/dashboard、自定义 UI、多厂商 Provider、系统安全凭据与企业默认边界 |
 | v2.1.0 | 2026-07-23 | ML 训练评估流水线 / 前后端路由联调 / 前端测试 |

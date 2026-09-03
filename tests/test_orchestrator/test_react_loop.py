@@ -119,7 +119,7 @@ class MockToolCallingLLM(LLMInterface):
 @pytest.mark.asyncio
 async def test_react_loop_direct_reply():
     """测试：LLM 直接回复不调工具的场景"""
-    orchestrator = Orchestrator(config={}, tools=ToolRegistry())
+    orchestrator = Orchestrator(config={"llm": {"provider": "mock"}}, tools=ToolRegistry())
     orchestrator.llm = MockLLM()
 
     loop = TrueReActLoop(orchestrator)
@@ -138,7 +138,7 @@ async def test_react_loop_direct_reply():
 @pytest.mark.asyncio
 async def test_react_loop_with_history():
     """测试：带历史消息的 ReAct 循环"""
-    orchestrator = Orchestrator(config={}, tools=ToolRegistry())
+    orchestrator = Orchestrator(config={"llm": {"provider": "mock"}}, tools=ToolRegistry())
     orchestrator.llm = MockLLM()
 
     history = [

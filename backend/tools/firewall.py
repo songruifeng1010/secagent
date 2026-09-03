@@ -75,9 +75,23 @@ class FirewallExecutionContext:
             reason=reason,
         )
 
+    @classmethod
+    def local_console(
+        cls, action: str, actor: str = "local-console", reason: str = ""
+    ) -> "FirewallExecutionContext":
+        """为仅绑定回环地址的本机控制台创建人工处置上下文。"""
+        if action not in {"block", "unblock"}:
+            raise ValueError("无效的本机防火墙操作")
+        return cls(
+            actor=actor,
+            source="local_console",
+            allowed_actions=frozenset({action}),
+            reason=reason,
+        )
+
     def allows_confidence_override(self, action: str) -> bool:
         return (
-            self.source in {"authenticated_api", "federation_peer"}
+            self.source in {"local_console", "federation_peer"}
             and action in self.allowed_actions
         )
 

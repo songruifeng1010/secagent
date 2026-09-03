@@ -27,7 +27,9 @@ class Orchestrator:
         self.config = config or {}
         self.agent_id = self.config.get("agent_id", "orch-001")
         # 如果配置中包含 LLM 配置，则传进去
-        llm_cfg = self.config.get("llm", None) or {}
+        raw_llm_cfg = self.config.get("llm", None) or {}
+        # 配置属于调用方；构造编排器不能通过 pop 修改它。
+        llm_cfg = dict(raw_llm_cfg) if isinstance(raw_llm_cfg, dict) else {}
         # 提取 fallback 配置（并防止修改原 dict）
         fallback_cfg = None
         if isinstance(llm_cfg, dict):
@@ -35,7 +37,13 @@ class Orchestrator:
             llm_provider = llm_cfg.pop("provider", None)
         else:
             llm_provider = None
-        self.llm = LLMFactory.get_deepseek(llm_cfg, fallback_cfg)
+        # 显式 provider 优先于历史 DeepSeek 默认值，便于本地 Mock、Ollama
+        # 及其他已配置运行时安全地生效。
+        self.llm = (
+            LLMFactory.get_provider(llm_provider, llm_cfg, fallback_cfg)
+            if llm_provider
+            else LLMFactory.get_deepseek(llm_cfg, fallback_cfg)
+        )
         self.tools = tools or ToolRegistry()
         self.agents: dict[str, AgentInfo] = {}
         self.conversation_history: list[dict] = []

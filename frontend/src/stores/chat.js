@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { apiFetch, buildApiUrl, hasWebSession, markWebSession } from '../utils/http.js'
+import { apiFetch, buildApiUrl } from '../utils/http.js'
 
 export const useChatStore = defineStore('chat', () => {
   const messages = ref([])
@@ -21,7 +21,7 @@ export const useChatStore = defineStore('chat', () => {
   let _reconnectTimer = null
   let _reconnectAttempts = 0
   let _pendingMessage = null
-  let _manualClose = false         // 手动断开标志（退出登录/切到登录页）
+  let _manualClose = false
   const WS_HEARTBEAT_INTERVAL = 30000
   const MAX_RECONNECT_DELAY = 30000 // 重连最大间隔 30 秒（无限重试，不永久放弃）
 
@@ -453,7 +453,6 @@ export const useChatStore = defineStore('chat', () => {
 
   function connectWebSocket(conversationId = '') {
     _manualClose = false
-    if (!hasWebSession()) { wsConnected.value = false; return }
     // 如果已有活跃连接，不重复创建
     if (_ws && _ws.readyState === WebSocket.OPEN) { wsConnected.value = true; return }
     // 关闭旧连接
@@ -489,14 +488,8 @@ export const useChatStore = defineStore('chat', () => {
       _ws.onclose = (event) => {
         _stopHeartbeat()
         wsConnected.value = false
-        // 手动断开（退出登录/切登录页）：不重连
+        // 手动断开时不重连。
         if (_manualClose) return
-        // 认证失败（4001 = 后端拒绝；1006 = nginx 403 握手拒绝/网络异常）
-        // 尝试自动刷新 token 后重连，而不是直接放弃
-        if (event.code === 4001 || event.code === 1006) {
-          handleAuthFailure()
-          return
-        }
         _scheduleReconnect()
       }
       _ws.onerror = () => {
@@ -506,61 +499,6 @@ export const useChatStore = defineStore('chat', () => {
     } catch (e) {
       wsConnected.value = false
       _scheduleReconnect()
-    }
-  }
-
-  /**
-   * 认证失败处理：先尝试用 refresh token 换新 access token。
-   *  - 刷新成功 → 立即用新 token 重连
-   *  - 网络异常  → 稍后重试（不登出）
-   *  - 刷新 token 失效 → 清理并跳转登录页
-   */
-  async function handleAuthFailure() {
-    // 清掉可能残留的重连定时器，避免重复调度
-    if (_reconnectTimer) { clearTimeout(_reconnectTimer); _reconnectTimer = null }
-    const result = await refreshTokenIfPossible()
-    if (result.ok) {
-      // 刷新成功：用新 token 重连（关闭旧连接，重新发起）
-      if (_ws) { try { _ws.close(1000, 'reconnect') } catch {} }
-      _ws = null
-      connectWebSocket()
-    } else if (result.reason === 'network') {
-      // 网络异常，保留登录态，指数退避后重试
-      _scheduleReconnect()
-    } else {
-      // refresh token 无效/过期：清理登录态并跳登录
-      markWebSession(false)
-      localStorage.removeItem('secagentx_user')
-      localStorage.removeItem('secagentx_permissions')
-      wsConnected.value = false
-      if (window.location.pathname !== '/login') {
-        window.location.href = '/login'
-      }
-    }
-  }
-
-  /**
-   * 尝试刷新 JWT token。
-   * @returns {{ok: boolean, reason?: string}} ok=true 刷新成功；reason='network' 网络错误；reason='rejected' 刷新被拒绝
-   */
-  async function refreshTokenIfPossible() {
-    try {
-      const resp = await fetch(buildApiUrl('/api/auth/web/refresh'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'same-origin',
-      })
-      if (resp.ok) {
-        const data = await resp.json()
-        if (data.status === 'ok') {
-          markWebSession(true)
-          return { ok: true }
-        }
-      }
-      return { ok: false, reason: 'rejected' }
-    } catch (e) {
-      console.warn('[WS] 刷新 Token 网络错误:', e)
-      return { ok: false, reason: 'network' }
     }
   }
 

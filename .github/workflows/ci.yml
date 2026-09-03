@@ -21,8 +21,11 @@ jobs:
       - name: Run full backend suite with coverage gate
         run: pytest -m "not slow" --timeout=60 --cov=backend --cov-report=term --cov-report=xml --cov-fail-under=60
         env:
-          SECAGENTX_PASSWORD: SecAgentX-E2E-Only-2026!
-          SECAGENTX_JWT_SECRET: secagentx-ci-secret-at-least-32-characters-long
+          SECAGENTX_ACTIVE_PROVIDER: mock
+          SECAGENTX_LLM_PROVIDER_ID: mock
+          SECAGENTX_LLM_API_BASE: mock://local
+          SECAGENTX_LLM_MODEL: mock-llm
+          SECAGENTX_LLM_ALLOW_NO_KEY: "true"
           FIREWALL_BACKEND: mock
       - name: Validate published knowledge snapshots
         run: python scripts/quality/knowledge_health.py --strict --score
@@ -93,8 +96,6 @@ jobs:
       - name: Validate Compose configuration
         run: docker compose config --quiet
         env:
-          SECAGENTX_PASSWORD: SecAgentX-Compose-Validation-Only!
-          SECAGENTX_JWT_SECRET: secagentx-compose-validation-secret-32-chars
           POSTGRES_PASSWORD: SecAgentX-Postgres-Validation-Only!
       - name: Build production image
         run: docker build --tag secagentx:ci .
@@ -120,8 +121,6 @@ jobs:
       - run: npm run test:e2e
         working-directory: frontend
         env:
-          SECAGENTX_PASSWORD: SecAgentX-E2E-Only-2026!
-          SECAGENTX_JWT_SECRET: secagentx-e2e-secret-at-least-32-characters
           FIREWALL_BACKEND: mock
 
   postgres-integration:

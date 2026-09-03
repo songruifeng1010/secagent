@@ -2,7 +2,6 @@
 // Playwright E2E Test Configuration
 // ═══════════════════════════════════════════════════════════
 import { defineConfig, devices } from '@playwright/test'
-import { E2E_PASSWORD } from './e2e/test-config.js'
 
 export default defineConfig({
   testDir: './e2e',
@@ -16,7 +15,7 @@ export default defineConfig({
   ],
 
   use: {
-    baseURL: process.env.E2E_BASE_URL || 'http://localhost:3000',
+    baseURL: process.env.E2E_BASE_URL || 'http://127.0.0.1:3100',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },
@@ -31,20 +30,24 @@ export default defineConfig({
   // 启动前端 dev server + 后端 API 作为测试环境
   webServer: [
     {
-      command: 'node ./node_modules/vite/bin/vite.js',
-      url: 'http://localhost:3000',
-      reuseExistingServer: !process.env.CI,
-      timeout: 30000,
-    },
-    {
-      command: 'cd .. && python -m backend.interface.api_server',
-      url: 'http://localhost:8000/api/health',
+      command: `"${process.execPath}" ./node_modules/vite/bin/vite.js --host 127.0.0.1 --port 3100`,
+      url: 'http://127.0.0.1:3100',
       reuseExistingServer: !process.env.CI,
       timeout: 30000,
       env: {
-        SECAGENTX_PORT: '8000',
-        SECAGENTX_JWT_SECRET: 'e2e-test-secret-at-least-32-chars-long!',
-        SECAGENTX_PASSWORD: E2E_PASSWORD,
+        E2E_UI_PORT: '3100',
+        E2E_API_PORT: '8010',
+      },
+    },
+    {
+      command: 'cd .. && python -m backend.interface.api_server',
+      url: 'http://127.0.0.1:8010/api/health',
+      reuseExistingServer: !process.env.CI,
+      timeout: 30000,
+      env: {
+        SECAGENTX_PORT: '8010',
+        E2E_UI_PORT: '3100',
+        E2E_API_PORT: '8010',
         FIREWALL_BACKEND: 'mock',
         LLM_PROVIDER: 'mock',
         SECAGENTX_ACTIVE_PROVIDER: 'mock',

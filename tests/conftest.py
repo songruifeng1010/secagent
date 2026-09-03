@@ -29,8 +29,6 @@ os.environ.pop("VT_API_KEY", None)
 os.environ.pop("ABUSEIPDB_API_KEY", None)
 os.environ.pop("OTX_API_KEY", None)
 os.environ.setdefault("CI", "true")
-os.environ.setdefault("SECAGENTX_PASSWORD", "SecAgentX-E2E-Only-2026!")
-os.environ["SECAGENTX_PASSWORD_HASH"] = ""  # 置空 hash，确保使用明文密码登录
 # 测试环境强制使用 mock 防火墙后端，避免测试真实写入 iptables 规则
 os.environ["FIREWALL_BACKEND"] = "mock"
 

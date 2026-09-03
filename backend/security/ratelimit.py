@@ -57,7 +57,6 @@ class RateLimiter:
     速率限制器
 
     默认限制（按 IP 维度）:
-      - /api/auth/*   : 5 req/s, burst=10     (登录接口严格限流)
       - /api/*        : 30 req/s, burst=60     (一般 API)
       - /webhook/*    : 100 req/s, burst=200   (告警接入)
       - /ws/*         : 不限流（WebSocket 长连接）
@@ -65,7 +64,6 @@ class RateLimiter:
     """
 
     DEFAULTS: dict[str, tuple[float, int]] = {
-        "/api/auth/": (5, 10),
         "/api/": (30, 60),
         "/webhook/": (100, 200),
     }

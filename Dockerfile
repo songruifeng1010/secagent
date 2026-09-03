@@ -46,4 +46,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "import httpx; httpx.get('http://localhost:8000/api/health/ready', timeout=5).raise_for_status()" || exit 1
 
 # 使用 exec 格式确保信号正确传递
-CMD ["python", "-m", "backend", "serve", "--host", "0.0.0.0", "--allow-remote", "--non-interactive"]
+CMD ["python", "-m", "uvicorn", "backend.interface.api_server:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]

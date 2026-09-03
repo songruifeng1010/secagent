@@ -52,11 +52,6 @@ def init_environment() -> None:
     替代各自分散的初始化逻辑。
     """
     ensure_env_loaded()
-    try:
-        from backend.config.runtime_settings import activate_runtime_settings
-        activate_runtime_settings()
-    except Exception as exc:
-        logger.warning("安全运行配置加载失败，将使用环境变量: %s", exc)
     # onboarding 保存的活动 Provider 优先于项目默认配置，但不覆盖进程显式传入的
     # SECAGENTX_ACTIVE_PROVIDER，保证 CLI/Web/Agent 使用同一模型路由。
     if not os.getenv("SECAGENTX_ACTIVE_PROVIDER"):

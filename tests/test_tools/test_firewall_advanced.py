@@ -169,8 +169,8 @@ class TestCircuitBreakerIntegration:
         circuit_breaker._total_blocks_today = 20
 
         tool = FirewallTool(block_threshold=0.70)
-        context = FirewallExecutionContext.authenticated_api(
-            actor="operator-1", permission="firewall:block"
+        context = FirewallExecutionContext.local_console(
+            action="block", actor="local-console", reason="紧急"
         )
         result = await tool.execute(
             action="block", ip="2.2.2.2",
@@ -276,8 +276,8 @@ class TestEdgeCases:
     @pytest.mark.asyncio
     async def test_whitelist_cannot_be_bypassed_by_manual_context(self):
         tool = FirewallTool(whitelist=["10.0.0.1"])
-        context = FirewallExecutionContext.authenticated_api(
-            actor="operator-1", permission="firewall:block"
+        context = FirewallExecutionContext.local_console(
+            action="block", actor="local-console", reason="白名单测试"
         )
         result = await tool.execute(
             action="block", ip="10.0.0.1",
