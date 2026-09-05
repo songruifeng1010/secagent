@@ -68,6 +68,19 @@ orchestrator: Optional[Orchestrator] = None
 ws_manager = WebSocketManager()
 
 
+class ConversationCreateBody(BaseModel):
+    """本机控制台新建研判会话的请求体。"""
+
+    title: str = ""
+
+
+class ConversationUpdateBody(BaseModel):
+    """允许用户维护的会话展示元数据。"""
+
+    title: Optional[str] = None
+    pinned: Optional[bool] = None
+
+
 # ═══════════ 话题切换检测（v2.5：切断跨话题历史串味） ═══════════
 # 同一 WS 会话内连续提问时，若当前问题与最近一轮历史提问相似度低，
 # 视为"新话题"，不注入旧历史 —— 防止 LLM 把新问题当作旧分析的延续。
@@ -499,6 +512,43 @@ def create_app() -> Optional[FastAPI]:
             pass
         return base
 
+    @app.get("/api/ml/status", dependencies=[Depends(require_permission("dashboard:view"))])
+    async def ml_model_status():
+        """返回 ML 威胁检测模型状态；只读，不触发训练、下载或加载。"""
+        from backend.ml_model.model_registry import scan_model_artifacts
+        artifacts = scan_model_artifacts()
+        try:
+            from backend.tools.ml_detector import MLThreatDetectorTool
+            tool = orchestrator.tools.get("ml_threat_detector")
+            # 模型未部署时通常不会注册到 ToolRegistry，使用探测实例仍可返回清晰状态。
+            if tool is None:
+                tool = MLThreatDetectorTool()
+            status = tool.get_model_status()
+            status["models"] = artifacts
+            return status
+        except Exception as exc:
+            return {
+                "available": False,
+                "models": artifacts,
+                "loaded": False,
+                "is_trained": False,
+                "error": str(exc),
+                "note": "ML 检测模块不可用，请安装 requirements-ml.txt",
+            }
+
+    @app.get("/api/ml/models", dependencies=[Depends(require_permission("dashboard:view"))])
+    async def ml_models_status():
+        """列出三个数据集模型制品状态；只读，不加载模型。"""
+        from backend.ml_model.model_registry import scan_model_artifacts
+        return {"models": scan_model_artifacts()}
+
+    @app.get("/api/ml/datasets", dependencies=[Depends(require_permission("dashboard:view"))])
+    async def ml_datasets_catalog():
+        """列出内置数据集适配器及所需文件；只读，不检查或下载数据。"""
+        from dataclasses import asdict
+        from backend.ml_model.datasets import list_dataset_specs
+        return {"datasets": [asdict(spec) for spec in list_dataset_specs()]}
+
     # ==================== 零人工干预 API ====================
 
     class AlertWebhookBody(BaseModel):
@@ -512,6 +562,7 @@ def create_app() -> Optional[FastAPI]:
         severity: str = "中危"
         alert_type: str = ""
         timestamp: str = ""
+        signals: dict = {}
 
     @app.post("/webhook/alert", dependencies=[Depends(require_permission("events:write"))])
     async def webhook_alert(alert: AlertWebhookBody):
@@ -881,6 +932,7 @@ def create_app() -> Optional[FastAPI]:
             "malware_name": raw.get("malware_name", ""),
             "threat_sources": raw.get("threat_sources", []),
             "threat_level": raw.get("threat_level", ""),
+            "risk_fusion": raw.get("risk_fusion", {}),
             "dest_ip": raw.get("dest_ip", ""),
             "dest_port": raw.get("dest_port", 0),
             "protocol": raw.get("protocol", ""),
@@ -929,10 +981,13 @@ def create_app() -> Optional[FastAPI]:
             "malware_name": raw.get("malware_name", ""),
             "threat_sources": raw.get("threat_sources", []),
             "threat_level": raw.get("threat_level", ""),
+            "risk_fusion": raw.get("risk_fusion", {}),
             "protocol": raw.get("protocol", ""),
             "dest_ip": raw.get("dest_ip", ""),
             "dest_port": raw.get("dest_port", 0),
             "created_at": r["created_at"],
+            "resolution": r.get("resolution", ""),
+            "resolved_by": r.get("resolved_by", ""),
             "resolved_at": r.get("resolved_at"),
             "techniques": techniques,
             "iocs": raw.get("iocs", []),
@@ -987,6 +1042,26 @@ def create_app() -> Optional[FastAPI]:
                 event = _format_event_list_item(dict(r))
                 events.append(event)
             return {"events": events, "total": total, "limit": limit, "offset": offset}
+
+    @app.get("/api/events/feedback", dependencies=[Depends(require_permission("events:read"))])
+    async def list_event_feedback(limit: int = 500):
+        """导出已由操作员确认的事件标签，供质量分析和后续重训使用。"""
+        limit = min(max(limit, 1), 2000)
+        async with get_repository() as repo:
+            rows = await repo.fetch_all(
+                "SELECT id, title, severity, status, source_ip, alert_type, description, "
+                "raw_data, resolution, resolved_by, created_at, resolved_at "
+                "FROM events WHERE resolution IN "
+                "('confirmed_true_positive', 'confirmed_false_positive') "
+                "ORDER BY resolved_at DESC LIMIT ?",
+                (limit,),
+            )
+        feedback = []
+        for row in rows:
+            item = dict(row)
+            item["label"] = "true_positive" if item["resolution"] == "confirmed_true_positive" else "false_positive"
+            feedback.append(item)
+        return {"feedback": feedback, "count": len(feedback), "limit": limit}
 
     @app.get("/api/events/{event_id}", dependencies=[Depends(require_permission("events:read"))])
     async def get_event(event_id: str):
@@ -1070,8 +1145,14 @@ def create_app() -> Optional[FastAPI]:
                     # 更新该 IP 相关事件状态为 blocked
                     async with get_repository() as repo:
                         await repo.execute(
-                            "UPDATE events SET status='blocked' WHERE source_ip=? AND status IN ('open','escalated')",
-                            (ip,),
+                            "UPDATE events SET status='blocked', resolution=?, resolved_by=?, resolved_at=? "
+                            "WHERE source_ip=? AND status IN ('open','escalated')",
+                            (
+                                body.reason or "operator_block",
+                                operator,
+                                datetime.now(timezone.utc).isoformat(),
+                                ip,
+                            ),
                         )
                     return {"success": True, "action": "blocked", "ip": ip,
                             "message": result.data.get("message", f"IP {ip} 已封禁")}
@@ -1123,8 +1204,18 @@ def create_app() -> Optional[FastAPI]:
                     if not row:
                         return {"success": False, "error": f"事件 {event_id} 不存在"}
                     await repo.execute(
-                        "UPDATE events SET status=?, resolved_at=? WHERE id=?",
-                        (new_status, datetime.now(timezone.utc).isoformat(), event_id),
+                        "UPDATE events SET status=?, resolution=?, resolved_by=?, resolved_at=? WHERE id=?",
+                        (
+                            new_status,
+                            {
+                                "confirmed": "confirmed_true_positive",
+                                "ignored": "confirmed_false_positive",
+                                "escalated": "manual_review_required",
+                            }[new_status],
+                            operator,
+                            datetime.now(timezone.utc).isoformat(),
+                            event_id,
+                        ),
                     )
                 return {"success": True, "action": action, "event_id": event_id,
                         "status": new_status, "source_ip": row["source_ip"]}
@@ -1153,21 +1244,88 @@ def create_app() -> Optional[FastAPI]:
 
     # ==================== 轨迹数据（Trajectory） ====================
     @app.get("/api/conversations")
-    async def list_conversations_api(limit: int = 50):
-        """获取会话列表（供轨迹页下拉选择）"""
+    async def list_conversations_api(limit: int = 50, q: str = ""):
+        """获取可恢复的会话列表，支持标题搜索与置顶排序。"""
         from backend.storage.repositories.conversation_repo import ConversationRepository
         async with get_repository() as repo_db:
             repo = ConversationRepository(repo_db, owner_id="local")
-            rows = await repo.list_conversations(limit=limit)
+            rows = await repo.list_conversations(limit=limit, query=q)
             conversations = []
             for r in rows:
                 conversations.append({
                     "conversation_id": r.get("id") or r.get("conversation_id"),
                     "title": r.get("title", ""),
+                    "pinned": bool(r.get("pinned", False)),
+                    "message_count": int(r.get("message_count", 0)),
                     "created_at": r.get("created_at", ""),
                     "updated_at": r.get("updated_at", ""),
                 })
             return {"conversations": conversations}
+
+    @app.post("/api/conversations", status_code=201)
+    async def create_conversation_api(body: ConversationCreateBody):
+        """预创建空白研判会话；首条提问会自动生成标题。"""
+        title = " ".join((body.title or "").split())[:80]
+        async with get_repository() as repo_db:
+            repo = ConversationRepository(repo_db, owner_id="local")
+            conversation_id = await repo.create_conversation(title=title)
+            conversation = await repo.require_conversation(conversation_id)
+        return {"conversation": {
+            "conversation_id": conversation["id"],
+            "title": conversation.get("title", ""),
+            "pinned": bool(conversation.get("pinned", False)),
+            "created_at": conversation["created_at"],
+            "updated_at": conversation["updated_at"],
+        }}
+
+    @app.get("/api/conversations/{conversation_id}/messages")
+    async def get_conversation_messages_api(conversation_id: str, limit: int = 200):
+        """加载历史对话正文，供控制台恢复而不泄露技术会话编号。"""
+        from backend.storage.repositories.conversation_repo import ConversationAccessDenied
+        async with get_repository() as repo_db:
+            repo = ConversationRepository(repo_db, owner_id="local")
+            try:
+                rows = await repo.get_messages(conversation_id, limit=limit)
+            except ConversationAccessDenied:
+                raise HTTPException(status_code=404, detail="会话不存在")
+        return {"messages": [{
+            "id": r["id"], "role": r["role"], "content": r["content"],
+            "agent_id": r.get("agent_id", ""), "created_at": r["created_at"],
+        } for r in rows]}
+
+    @app.patch("/api/conversations/{conversation_id}")
+    async def update_conversation_api(conversation_id: str, body: ConversationUpdateBody):
+        """重命名或置顶一个历史研判会话。"""
+        from backend.storage.repositories.conversation_repo import ConversationAccessDenied
+        if body.title is None and body.pinned is None:
+            raise HTTPException(status_code=422, detail="请提供 title 或 pinned")
+        async with get_repository() as repo_db:
+            repo = ConversationRepository(repo_db, owner_id="local")
+            try:
+                row = await repo.update_conversation(
+                    conversation_id, title=body.title, pinned=body.pinned
+                )
+            except ConversationAccessDenied:
+                raise HTTPException(status_code=404, detail="会话不存在")
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc))
+        return {"conversation": {
+            "conversation_id": row["id"], "title": row.get("title", ""),
+            "pinned": bool(row.get("pinned", False)),
+            "created_at": row["created_at"], "updated_at": row["updated_at"],
+        }}
+
+    @app.delete("/api/conversations/{conversation_id}")
+    async def delete_conversation_api(conversation_id: str):
+        """删除当前本机控制台的会话及其记录。"""
+        from backend.storage.repositories.conversation_repo import ConversationAccessDenied
+        async with get_repository() as repo_db:
+            repo = ConversationRepository(repo_db, owner_id="local")
+            try:
+                await repo.delete_conversation(conversation_id)
+            except ConversationAccessDenied:
+                raise HTTPException(status_code=404, detail="会话不存在")
+        return {"success": True}
 
     @app.get("/api/trajectory/stats")
     async def trajectory_stats():
@@ -1345,6 +1503,48 @@ def create_app() -> Optional[FastAPI]:
                 "alert_types": alert_types[:8],
             },
         }
+
+    # ==================== RAG / 知识库状态 ====================
+    @app.get("/api/knowledge/index/status", dependencies=[Depends(require_permission("knowledge:read"))])
+    async def knowledge_index_status():
+        """只读返回 RAG 向量索引状态，不自动创建集合或触发嵌入。"""
+        persist_dir = os.getenv("CHROMA_PERSIST_DIR", "data/chromadb")
+        status = {
+            "available": False,
+            "persist_dir": os.path.abspath(persist_dir),
+            "collections": [],
+            "total_documents": 0,
+            "note": "尚未建立 ChromaDB 向量索引",
+        }
+        try:
+            from backend.storage.chroma_store import HAS_CHROMADB
+            if not HAS_CHROMADB:
+                status["note"] = "chromadb 未安装；RAG 将使用知识库关键词检索"
+                return status
+            if not os.path.isdir(persist_dir):
+                return status
+            import chromadb
+            from chromadb.config import Settings
+            client = chromadb.PersistentClient(
+                path=persist_dir,
+                settings=Settings(anonymized_telemetry=False),
+            )
+            collections = []
+            total = 0
+            for collection in client.list_collections():
+                count = collection.count()
+                total += count
+                collections.append({"name": collection.name, "documents": count})
+            status.update({
+                "available": bool(collections),
+                "collections": collections,
+                "total_documents": total,
+                "note": "向量索引可用" if collections else status["note"],
+            })
+        except Exception as exc:
+            status["error"] = str(exc)
+            status["note"] = "向量索引读取失败；请运行知识库嵌入命令检查"
+        return status
 
     # ==================== MITRE ATT&CK 结构化API ====================
     @app.get("/api/mitre/technique/{technique_id}", dependencies=[Depends(require_permission("knowledge:read"))])
@@ -1542,7 +1742,7 @@ def create_app() -> Optional[FastAPI]:
                 # 指定的 conversation_id 不存在 → 自动创建新对话（兼容旧客户端）
                 conversation_id = f"ws-{ws_id}-{uuid.uuid4().hex[:8]}"
                 await repo.create_conversation(
-                    title=f"WebSocket对话 {conversation_id}",
+                    title="",
                     conversation_id=conversation_id,
                 )
                 logger.info(f"指定的对话 {resume_id} 不存在，创建新对话", extra={"ws_id": ws_id, "conversation_id": conversation_id})
@@ -1550,7 +1750,7 @@ def create_app() -> Optional[FastAPI]:
             # 新对话
             conversation_id = f"ws-{ws_id}-{uuid.uuid4().hex[:8]}"
             await repo.create_conversation(
-                title=f"WebSocket对话 {conversation_id}",
+                title="",
                 conversation_id=conversation_id,
             )
             logger.info(f"新 WebSocket 连接", extra={"ws_id": ws_id, "conversation_id": conversation_id})

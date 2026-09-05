@@ -12,8 +12,10 @@
 import os
 import json
 import time
+import sys
 import numpy as np
 import logging
+from pathlib import Path
 from typing import Optional, Tuple, List
 from dataclasses import dataclass, field
 
@@ -26,6 +28,11 @@ from sklearn.model_selection import StratifiedKFold, cross_val_score
 import joblib
 
 logger = logging.getLogger("secagentx.ml.trainer")
+
+# 允许受限 Windows 环境从项目本地依赖目录加载可选训练组件。
+_LOCAL_PY_DEPS = Path(__file__).resolve().parents[2] / ".python-deps"
+if _LOCAL_PY_DEPS.is_dir() and str(_LOCAL_PY_DEPS) not in sys.path:
+    sys.path.insert(0, str(_LOCAL_PY_DEPS))
 
 try:
     from xgboost import XGBClassifier
@@ -164,6 +171,10 @@ class MLTrainer:
                 n_estimators=params.get('n_estimators', 200),
                 max_depth=params.get('max_depth', 8),
                 learning_rate=params.get('learning_rate', 0.08),
+                min_child_weight=params.get('min_child_weight', 1),
+                gamma=params.get('gamma', 0),
+                reg_alpha=params.get('reg_alpha', 0),
+                reg_lambda=params.get('reg_lambda', 1),
                 subsample=params.get('subsample', 0.8),
                 colsample_bytree=params.get('colsample_bytree', 0.8),
                 scale_pos_weight=params.get('scale_pos_weight', 2),
@@ -221,7 +232,8 @@ class MLTrainer:
               y_val: Optional[np.ndarray] = None,
               algorithm: str = 'xgboost',
               feature_names: Optional[list] = None,
-              tune_hyperparams: bool = True) -> 'MLTrainer':
+              tune_hyperparams: bool = True,
+              model_params: Optional[dict] = None) -> 'MLTrainer':
         """
         训练模型（含可选的超参优化和阈值调优）。
 
@@ -247,7 +259,9 @@ class MLTrainer:
             if tune_hyperparams:
                 self._train_with_optimization(X_train, y_train, algorithm)
             else:
-                self.model = self._create_base_model(algorithm, {'random_state': 42})
+                fixed_params = dict(model_params or {})
+                fixed_params['random_state'] = 42
+                self.model = self._create_base_model(algorithm, fixed_params)
                 self.model.fit(X_train, y_train)
 
         # 概率校准
@@ -624,4 +638,3 @@ if __name__ == '__main__':
               f"F1: {trainer.metrics.f1_score:.4f} | "
               f"误报率: {trainer.metrics.false_positive_rate:.4f}")
         trainer.save(f"model/threat_model_{algo}.joblib")
-

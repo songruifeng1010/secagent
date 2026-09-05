@@ -95,6 +95,23 @@ describe('ChatStore', () => {
     expect(card.content.agent_results.length).toBe(1)
   })
 
+  it('should keep plain_text responses as an agent message even with backend metadata', () => {
+    store.handleMessage({ type: 'orchestrator_start' })
+    store.handleMessage({
+      type: 'true_react_complete',
+      response_mode: 'plain_text',
+      answer_mode: 'rag',
+      content: 'SQLite 注入是针对 SQLite 查询拼接的注入风险。',
+      structured_result: {
+        response_mode: 'plain_text',
+        summary_text: 'SQLite 注入是针对 SQLite 查询拼接的注入风险。',
+      },
+    })
+    expect(store.messages.filter(m => m.role === 'agent')).toHaveLength(1)
+    expect(store.messages.find(m => m.role === 'agent').content).toContain('SQLite 注入')
+    expect(store.messages.find(m => m.role === 'structured_result')).toBeFalsy()
+  })
+
   it('should preserve decision_path in structured_result (v2.4 fusion)', () => {
     store.handleMessage({ type: 'orchestrator_start' })
     const sr = {

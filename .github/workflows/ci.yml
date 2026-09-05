@@ -17,6 +17,8 @@ jobs:
           python-version: "3.11"
           cache: pip
       - run: pip install -r requirements-dev.txt
+      - name: Check release file boundaries
+        run: python scripts/release_preflight.py
       - run: python -m compileall -q backend tests scripts
       - name: Run full backend suite with coverage gate
         run: pytest -m "not slow" --timeout=60 --cov=backend --cov-report=term --cov-report=xml --cov-fail-under=60

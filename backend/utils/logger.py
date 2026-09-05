@@ -8,6 +8,7 @@
   - 磁盘保护: 单个日志文件上限 100MB（以防某天日志量突增）
 """
 import sys
+import os
 import json
 import logging
 import logging.handlers
@@ -58,6 +59,8 @@ def setup_logger(name: str = "secagentx", level: str = "INFO") -> logging.Logger
 
     # ─── 控制台 Handler（人类可读，开发用） ───
     console = logging.StreamHandler(sys.stdout)
+    # CLI 只在界面展示执行状态，完整诊断仍写入文件。
+    console.addFilter(lambda record: os.getenv("SECAGENTX_CLI_QUIET") != "1")
     console.setFormatter(logging.Formatter(
         "[%(asctime)s] %(levelname)-5s %(name)s | %(message)s",
         datefmt="%H:%M:%S",
@@ -147,4 +150,3 @@ def check_log_health() -> dict:
 
 # 全局单例
 logger = setup_logger()
-

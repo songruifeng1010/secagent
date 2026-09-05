@@ -37,6 +37,8 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional, Callable
 
+from backend.security.risk_fusion import build_alert_fusion
+
 logger = logging.getLogger("secagentx.ingestor")
 
 
@@ -506,8 +508,16 @@ class AutoIngestor:
                 if chunk_type == "true_react_complete":
                     content = chunk.get("content", "") or chunk.get("summary", "")
                     final_result["summary"] = content
-                    # 从 LLM 回复文本中解析结构化裁决里的置信度
-                    confidence = self._extract_confidence_from_text(content)
+                    # 优先消费编排器的结构化裁决；仅兼容旧客户端时才从文本 JSON 解析。
+                    structured = chunk.get("structured_result") or chunk.get("structured") or {}
+                    verdict = structured.get("verdict") if isinstance(structured, dict) else {}
+                    if not isinstance(verdict, dict):
+                        verdict = {}
+                    confidence = verdict.get("confidence")
+                    if isinstance(confidence, (int, float)) and 0.0 <= float(confidence) <= 1.0:
+                        confidence = float(confidence)
+                    else:
+                        confidence = self._extract_confidence_from_text(content)
                     if confidence is not None:
                         final_result["confidence"] = confidence
                     else:
@@ -548,6 +558,14 @@ class AutoIngestor:
             except Exception as e:
                 logger.warning(f"规则引擎兜底评估异常: {e}")
 
+        # 多信号融合：外部告警可提供 ML/规则/RAG 信号；LLM 置信度作为兼容信号。
+        # 没有任何结构化信号时保持原有保守策略，不因 severity 单独自动处置。
+        fusion = build_alert_fusion(alert, confidence)
+        if fusion.signals:
+            confidence = fusion.score
+            final_result["confidence"] = confidence
+            final_result["risk_fusion"] = fusion.to_dict()
+
         # 保守策略：如果 LLM 没有输出标准结构化裁决，则不执行自动操作
         if confidence is None:
             logger.warning(
@@ -563,6 +581,7 @@ class AutoIngestor:
                 "action": action,
                 "summary": final_result.get("summary", "")[:300],
                 "reason": "LLM未输出结构化裁决，保守策略→升级人工复核",
+                "risk_fusion": final_result.get("risk_fusion", {}),
             }
             # 升级通知（含 OpenIM IM 推送）：置信度不足需人工介入
             if self.escalator:
@@ -575,7 +594,10 @@ class AutoIngestor:
                 result["escalation"] = esc_result
                 logger.info(f"  已升级人工: {alert_id} (置信度 {confidence:.0%})")
             # 记录事件
-            await self._save_event(alert_id, title, 0.0, "escalated", src_ip)
+            await self._save_event(
+                alert_id, title, 0.0, "escalated", src_ip,
+                raw_data=final_result.get("risk_fusion"),
+            )
             return result
 
         # Step 3: 按置信度自动决策
@@ -586,11 +608,15 @@ class AutoIngestor:
             "confidence": confidence,
             "action": action,
             "summary": final_result.get("summary", "")[:300],
+            "risk_fusion": final_result.get("risk_fusion", {}),
         }
 
         if action == "auto_closed":
             # 自动闭环 — 写入数据库
-            await self._save_event(alert_id, title, confidence, "resolved", src_ip)
+            await self._save_event(
+                alert_id, title, confidence, "resolved", src_ip,
+                raw_data=final_result.get("risk_fusion"),
+            )
             logger.info(f"  自动闭环: {alert_id} (置信度 {confidence:.0%})")
 
         elif action == "auto_blocked":
@@ -617,7 +643,10 @@ class AutoIngestor:
                     confidence=confidence,
                 )
                 result["block_result"] = block_result.data if block_result.success else block_result.error
-                await self._save_event(alert_id, title, confidence, "blocked", src_ip)
+                await self._save_event(
+                    alert_id, title, confidence, "blocked", src_ip,
+                    raw_data=final_result.get("risk_fusion"),
+                )
 
                 # 效果自动验证
                 if block_result.success:
@@ -642,11 +671,17 @@ class AutoIngestor:
                 )
                 result["escalation"] = esc_result
                 logger.info(f"  已升级人工: {alert_id} (置信度 {confidence:.0%})")
-            await self._save_event(alert_id, title, confidence, "escalated", src_ip)
+            await self._save_event(
+                alert_id, title, confidence, "escalated", src_ip,
+                raw_data=final_result.get("risk_fusion"),
+            )
 
         else:
             # 待观察 — 记录但暂不处置
-            await self._save_event(alert_id, title, confidence, "monitoring", src_ip)
+            await self._save_event(
+                alert_id, title, confidence, "monitoring", src_ip,
+                raw_data=final_result.get("risk_fusion"),
+            )
             logger.info(f"  标记观察: {alert_id} (置信度 {confidence:.0%})")
 
         # Prometheus 指标记录
@@ -699,33 +734,39 @@ class AutoIngestor:
             "dst_ip": raw.get("dst_ip", raw.get("dest_ip", raw.get("destination_ip", ""))),
             "severity": raw.get("severity", raw.get("level", raw.get("priority", "中危"))),
             "type": raw.get("type", raw.get("alert_type", raw.get("category", "unknown"))),
+            "signals": raw.get("signals") or {
+                key.removesuffix("_confidence"): raw[key]
+                for key in ("ml_confidence", "rule_confidence", "rag_confidence")
+                if isinstance(raw.get(key), (int, float))
+            },
             "timestamp": raw.get("timestamp", raw.get("time", datetime.now(timezone.utc).isoformat())),
             "raw": raw,
         }
         return alert
 
     async def _save_event(self, alert_id: str, title: str, confidence: float,
-                          status: str, src_ip: str = ""):
+                          status: str, src_ip: str = "", raw_data: dict | None = None):
         """将事件写入数据库（自动适配 SQLite 和 PostgreSQL）"""
         try:
             from backend.storage.database import Repository, _is_postgres
             db = Repository()
             severity = "低危" if confidence < 0.3 else "中危" if confidence < 0.7 else "高危"
             now = datetime.now(timezone.utc).isoformat()
+            event_raw = json.dumps(raw_data or {}, ensure_ascii=False)
             if _is_postgres():
                 sql = (
-                    "INSERT INTO events (id, title, severity, status, source_ip, description, created_at) "
-                    "VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (id) DO NOTHING"
+                    "INSERT INTO events (id, title, severity, status, source_ip, description, raw_data, created_at) "
+                    "VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (id) DO NOTHING"
                 )
             else:
                 sql = (
                     "INSERT OR IGNORE INTO events "
-                    "(id, title, severity, status, source_ip, description, created_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?)"
+                    "(id, title, severity, status, source_ip, description, raw_data, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
                 )
             await db.execute(sql, (
                 alert_id, title, severity, status, src_ip,
-                f"自动分析结果: 置信度 {confidence:.0%}", now,
+                f"自动分析结果: 置信度 {confidence:.0%}", event_raw, now,
             ))
             await db.close()
         except Exception as e:

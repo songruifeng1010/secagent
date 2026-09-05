@@ -112,6 +112,33 @@ class TestConversationRepo:
         assert conv2["title"] == "我的自定义标题"
 
     @pytest.mark.asyncio
+    async def test_list_only_populated_conversations_and_pins_first(self, repo):
+        """空白预创建会话不污染历史，置顶项优先显示。"""
+        empty = await repo.create_conversation(conversation_id="empty")
+        normal = await repo.create_conversation(title="普通研判", conversation_id="normal")
+        pinned = await repo.create_conversation(title="置顶研判", conversation_id="pinned")
+        await repo.save_message(normal, "user", "普通问题")
+        await repo.save_message(pinned, "user", "置顶问题")
+        await repo.update_conversation(pinned, pinned=True)
+
+        rows = await repo.list_conversations()
+
+        assert empty not in [row["id"] for row in rows]
+        assert [row["id"] for row in rows] == [pinned, normal]
+        assert rows[0]["pinned"] == 1
+        assert rows[0]["message_count"] == 1
+
+    @pytest.mark.asyncio
+    async def test_update_conversation_title_and_search(self, repo):
+        cid = await repo.create_conversation(title="原始标题", conversation_id="rename")
+        await repo.save_message(cid, "user", "需要重命名的会话")
+        updated = await repo.update_conversation(cid, title="  新的   研判标题  ")
+
+        assert updated["title"] == "新的 研判标题"
+        assert [row["id"] for row in await repo.list_conversations(query="研判")] == [cid]
+        assert await repo.list_conversations(query="不存在") == []
+
+    @pytest.mark.asyncio
     async def test_delete_conversation_cascades(self, repo):
         """删除会话 -> 连带删除消息和轨迹"""
         cid = await repo.create_conversation(title="待删", conversation_id="conv-del")

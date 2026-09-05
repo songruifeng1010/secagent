@@ -46,6 +46,7 @@ export default defineConfig({
       timeout: 30000,
       env: {
         SECAGENTX_PORT: '8010',
+        SECAGENTX_CORS_ORIGINS: 'http://127.0.0.1:3100,http://localhost:3100,http://127.0.0.1:8010',
         E2E_UI_PORT: '3100',
         E2E_API_PORT: '8010',
         FIREWALL_BACKEND: 'mock',

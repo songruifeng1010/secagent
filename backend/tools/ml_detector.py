@@ -23,8 +23,8 @@ class MLThreatDetectorTool(BaseTool):
 
     name = "ml_threat_detector"
     description = (
-        "对网络流量特征进行机器学习威胁检测。输入 KDD Cup 99 格式的 41 维流量特征，"
-        "返回恶意概率和威胁评估。支持批量检测。"
+        "对网络流量特征进行机器学习威胁检测。支持 NSL-KDD、UNSW-NB15 和 "
+        "CSE-CIC-IDS2018 模型制品，返回恶意概率和威胁评估。支持批量检测。"
     )
     parameters = {
         "type": "object",
@@ -63,10 +63,13 @@ class MLThreatDetectorTool(BaseTool):
                  model_path: Optional[str] = None):
         super().__init__()
         self.trainer = trainer
-        self.pipeline = pipeline or MLPipeline(use_smote=True)
         # 模型路径：支持指定版本；默认自动选择最新的带版本模型
         self._model_path = model_path or self._find_latest_model()
+        model_parent = os.path.basename(os.path.dirname(self._model_path))
+        self.dataset_name = model_parent if model_parent in {"nsl-kdd", "unsw-nb15", "cic-ids-2018"} else "nsl-kdd"
+        self.pipeline = pipeline or MLPipeline(use_smote=True, dataset_name=self.dataset_name)
         self._loaded = False
+        self._last_error = ""
 
     def _find_latest_model(self) -> str:
         """自动选择最新版本的模型文件。
@@ -76,8 +79,30 @@ class MLThreatDetectorTool(BaseTool):
           2. 无版本的基础模型（threat_model_<algo>.joblib）作为兜底
         """
         import glob
-        candidates = glob.glob(os.path.join(MODEL_DIR, "threat_model_*.joblib"))
+        import json
+        from backend.ml_model.model_registry import assess_model_report
+        candidates = glob.glob(os.path.join(MODEL_DIR, "**", "threat_model_*.joblib"), recursive=True)
         if not candidates:
+            return os.path.join(MODEL_DIR, "threat_model_xgboost.joblib")
+
+        # 训练成功不等于可以上线。没有报告或未达到最低 F1/召回率/ROC-AUC
+        # 的制品只保留在 API 展示中，不能被运行时自动选中。
+        deployable = []
+        for path in candidates:
+            report_path = os.path.splitext(path)[0] + "_report.json"
+            try:
+                with open(report_path, "r", encoding="utf-8") as handle:
+                    report = json.load(handle)
+                ok, _ = assess_model_report(report)
+                if ok:
+                    deployable.append(path)
+            except (OSError, ValueError):
+                continue
+        if deployable:
+            candidates = deployable
+        else:
+            # 返回不存在的路径，让 initialize() 给出明确的部署提示，
+            # 而不是悄悄加载未经验证的实验模型。
             return os.path.join(MODEL_DIR, "threat_model_xgboost.joblib")
 
         def _sort_key(path):
@@ -93,6 +118,7 @@ class MLThreatDetectorTool(BaseTool):
         """初始化时加载或训练模型。"""
         if self.trainer is not None and self.trainer.is_trained:
             self._loaded = True
+            self._last_error = ""
             logger.info("ML 模型已就绪（传入的训练器）")
             return
 
@@ -106,10 +132,15 @@ class MLThreatDetectorTool(BaseTool):
                 if not self.trainer.feature_names or self.trainer.scaler is None:
                     self._rebuild_pipeline_metadata()
                 logger.info(f"ML 模型已加载: {self._model_path}")
+                self._last_error = ""
                 return
             except Exception as e:
+                self._last_error = str(e)
                 logger.warning(f"ML 模型加载失败: {e}，将重新训练")
 
+        self._last_error = (
+            "未找到经过真实数据训练并验证的 ML 模型；请先离线训练并部署模型"
+        )
         raise RuntimeError(
             "未找到经过真实数据训练并验证的 ML 模型。"
             "请使用 NSL-KDD 或企业标注数据离线训练后配置模型文件；运行时不会自动使用合成数据训练。"
@@ -123,7 +154,7 @@ class MLThreatDetectorTool(BaseTool):
         """
         if self.pipeline.feature_names and self.pipeline.scaler is not None:
             return
-        data = self.pipeline.run_pipeline(n_samples=15000)
+        data = self.pipeline.run_pipeline(n_samples=15000, dataset=self.dataset_name)
         # 同步到 trainer，供预测使用
         if self.trainer:
             self.trainer.feature_names = list(self.pipeline.feature_names)
@@ -224,3 +255,28 @@ class MLThreatDetectorTool(BaseTool):
         if self.trainer:
             return self.trainer.get_summary()
         return {"is_trained": False}
+
+    def get_model_status(self) -> dict:
+        """返回可供 API/控制台展示的模型状态，不触发训练或下载。"""
+        exists = os.path.isfile(self._model_path)
+        summary = self.get_model_summary()
+        loaded = bool(self._loaded)
+        is_trained = bool(summary.get("is_trained", False))
+        return {
+            "available": bool(exists and (loaded or is_trained)),
+            "artifact_present": exists,
+            "loaded": loaded,
+            "is_trained": is_trained,
+            "model_path": self._model_path,
+            "algorithm": summary.get("algorithm", ""),
+            "threshold": summary.get("threshold"),
+            "metrics": summary.get("metrics", {}),
+            "error": self._last_error,
+            "note": (
+                "模型已加载，可供 Agent 调用"
+                if loaded or is_trained else
+                "模型文件存在但尚未加载；运行时初始化后才可调用"
+                if exists else
+                "未部署模型；请使用真实、已标注数据离线训练"
+            ),
+        }

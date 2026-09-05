@@ -307,6 +307,8 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     if (type === 'orchestrator_complete') {
+      // 服务端已落库最终答复；刷新会话中心以显示首条问题生成的标题与最新时间。
+      fetchConversations()
       isProcessing.value = false
       activeAgents.value = {}
       const summary = data.summary || ''
@@ -322,7 +324,11 @@ export const useChatStore = defineStore('chat', () => {
       // "专家报告"模式中展示。
       isProcessing.value = false
       activeAgents.value = {}
-      if (!data.structured_result) {
+      const responseMode = data.response_mode || data.structured_result?.response_mode || ''
+      const plainText = responseMode === 'plain_text' || ['free', 'rag'].includes(data.answer_mode)
+      // 知识定义类问题保留为一条正文消息；结构化结果仍随事件传输，
+      // 便于审计/导出，但不在对话区渲染成风险卡片。
+      if (plainText || !data.structured_result) {
         const report = data.content || data.summary || ''
         if (report && !contentAlreadyShown(report)) {
           addMessage('agent', report, 'orch-001', 'SecAgentX')
@@ -330,14 +336,14 @@ export const useChatStore = defineStore('chat', () => {
       }
       // 纯文本输出时只保留纯文本，不追加耗时提示（用户要求）
       // 结构化最终结果卡片（JSON-first）：顶层 verdict/score/agent_results
-      if (data.structured_result) {
+      if (data.structured_result && !plainText) {
         addMessage('structured_result', data.structured_result)
       }
       // 确定性置信度裁决卡片（v2.2.2）：仅在未启用 Decision Fusion 时展示
       // （修复：融合裁决为唯一权威时，旧加权聚合的 90% 与融合 30% 同时显示会自相矛盾，
       //  故有 structured_result(融合) 时以融合为准，不再展示旧聚合卡片）
       const agg = data.confidence_aggregate
-      if (agg && (agg.details || []).length > 0 && !data.structured_result) {
+      if (agg && (agg.details || []).length > 0 && !data.structured_result && !plainText) {
         addMessage('confidence_card', agg)
       }
       // 可解释风险评分卡（v2.3）：多严重、为什么，逐维度加减分
@@ -349,7 +355,9 @@ export const useChatStore = defineStore('chat', () => {
     if (type === 'true_react_max_rounds') {
       isProcessing.value = false
       activeAgents.value = {}
-      if (!data.structured_result) {
+      const responseMode = data.response_mode || data.structured_result?.response_mode || ''
+      const plainText = responseMode === 'plain_text' || ['free', 'rag'].includes(data.answer_mode)
+      if (plainText || !data.structured_result) {
         const summary = data.summary || data.content || ''
         if (summary && !contentAlreadyShown(summary)) {
           addMessage('agent', summary, 'orch-001', 'SecAgentX')
@@ -357,11 +365,11 @@ export const useChatStore = defineStore('chat', () => {
       }
       addMessage('system', ` 达到最大推理轮次`)
       // 结构化最终结果卡片（JSON-first）
-      if (data.structured_result) {
+      if (data.structured_result && !plainText) {
         addMessage('structured_result', data.structured_result)
       }
       const agg = data.confidence_aggregate
-      if (agg && (agg.details || []).length > 0 && !data.structured_result) {
+      if (agg && (agg.details || []).length > 0 && !data.structured_result && !plainText) {
         addMessage('confidence_card', agg)
       }
       if (data.risk_scorecard) {
@@ -549,10 +557,11 @@ export const useChatStore = defineStore('chat', () => {
   // ═══════════════════ 会话管理 ═══════════════════
 
   /** 加载历史会话列表（轨迹页下拉 / 会话侧边栏共用） */
-  async function fetchConversations() {
+  async function fetchConversations(query = '') {
     convLoading.value = true
     try {
-      const data = await apiFetch('/api/conversations')
+      const search = String(query || '').trim()
+      const data = await apiFetch(`/api/conversations${search ? `?q=${encodeURIComponent(search)}` : ''}`)
       conversations.value = data.conversations || []
     } catch (e) {
       console.warn('[chat] 加载会话列表失败:', e)
@@ -561,35 +570,78 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  /** 新建对话：清空消息 + 断开旧 WS 重连（不带 conversation_id → 后端创建新会话） */
-  function newConversation() {
-    currentConversationId.value = ''
+  function resetConversationView() {
     messages.value = []
     activeAgents.value = {}
     agentStatusList.value = []
     isProcessing.value = false
-    if (_ws) { try { _ws.close(1000, 'new-conv') } catch {} _ws = null }
-    wsConnected.value = false
-    connectWebSocket('')
   }
 
-  /** 恢复历史对话：加载该会话历史消息 + 切换 WebSocket 到该会话 */
+  /** 新建研判：先获得稳定的会话 ID，再切换实时连接。 */
+  async function newConversation() {
+    resetConversationView()
+    try {
+      const data = await apiFetch('/api/conversations', {
+        method: 'POST', body: JSON.stringify({}),
+      })
+      currentConversationId.value = data.conversation?.conversation_id || ''
+    } catch (e) {
+      // 兼容旧服务端：仍可由 WebSocket 创建临时会话。
+      console.warn('[chat] 预创建会话失败，回退到 WebSocket:', e)
+      currentConversationId.value = ''
+    }
+    if (_ws) { try { _ws.close(1000, 'new-conv') } catch {} _ws = null }
+    wsConnected.value = false
+    connectWebSocket(currentConversationId.value)
+  }
+
+  /** 恢复历史对话：先加载正文，再切换 WebSocket 到同一会话。 */
   async function resumeConversation(convId) {
     if (!convId || convId === currentConversationId.value) return
     currentConversationId.value = convId
-    messages.value = []
-    activeAgents.value = {}
-    agentStatusList.value = []
-    isProcessing.value = false
+    resetConversationView()
+    try {
+      const data = await apiFetch(`/api/conversations/${encodeURIComponent(convId)}/messages`)
+      messages.value = (data.messages || []).map((msg) => ({
+        id: msg.id,
+        // 历史记录仅恢复用户提问和最终答复，过程事件不会伪装成历史实时状态。
+        role: msg.role === 'assistant' ? 'agent' : msg.role,
+        content: msg.content,
+        agentId: msg.agent_id || '',
+        agentName: msg.role === 'assistant' ? 'SecAgentX' : '',
+        timestamp: msg.created_at || '',
+      }))
+    } catch (e) {
+      console.warn('[chat] 加载会话正文失败:', e)
+    }
     // 先断开旧连接，再带 conversation_id 重连
     if (_ws) { try { _ws.close(1000, 'switch-conv') } catch {} _ws = null }
     wsConnected.value = false
     connectWebSocket(convId)
   }
 
+  async function updateConversation(convId, patch) {
+    const data = await apiFetch(`/api/conversations/${encodeURIComponent(convId)}`, {
+      method: 'PATCH', body: JSON.stringify(patch),
+    })
+    const updated = data.conversation
+    const index = conversations.value.findIndex(c => c.conversation_id === convId)
+    if (index >= 0 && updated) conversations.value[index] = { ...conversations.value[index], ...updated }
+    await fetchConversations()
+    return updated
+  }
+
+  async function deleteConversation(convId) {
+    await apiFetch(`/api/conversations/${encodeURIComponent(convId)}`, { method: 'DELETE' })
+    conversations.value = conversations.value.filter(c => c.conversation_id !== convId)
+    if (currentConversationId.value === convId) await newConversation()
+    else await fetchConversations()
+  }
+
   return { messages, activeAgents, isProcessing, agentStatusList, messageList, wsConnected,
     conversations, currentConversationId, convLoading,
     addMessage, handleMessage, clearMessages, upsertAgentStatus,
     connectWebSocket, disconnectWebSocket, sendWsMessage,
-    fetchConversations, newConversation, resumeConversation }
+    fetchConversations, newConversation, resumeConversation,
+    updateConversation, deleteConversation }
 })

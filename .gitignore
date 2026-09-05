@@ -23,6 +23,7 @@ dist/
 !frontend/dist/
 !frontend/dist/**
 build/
+.python-deps/
 build-final*/
 dist-final*/
 test-runtime*/
@@ -94,3 +95,16 @@ Thumbs.db
 
 # 根目录 node_modules 缓存（非 frontend 依赖）
 node_modules/
+
+# 机器学习数据与离线模型（数据集/模型通过 README 和脚本准备，不进入 Git）
+dataset/*.csv
+dataset/*.txt
+dataset/*.zip
+dataset/cic_processed/
+dataset/cic_ids_2018/*.csv
+model/**/*.joblib
+model/**/*_report.json
+
+# 本地测试、临时验收和网络调试产物
+.test-temp*/
+*github-known-hosts*

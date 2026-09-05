@@ -8,8 +8,12 @@ SecAgentX CLI — 多智能体协同安全检测终端
 
 命令:
   /help       显示帮助
+  /new        新建会话
+  /history    查看历史会话；/resume ID 恢复指定会话
   /agents     查看 Agent 状态
   /stats      查看系统统计
+  /model      查看当前模型
+  /export     导出当前会话为 Markdown
   /auto       查看自动模块状态
   /continue   恢复上次会话
   /cancel     取消当前分析
@@ -24,6 +28,7 @@ import os
 import json
 import argparse
 import signal
+from contextlib import suppress
 from pathlib import Path
 from typing import Optional
 
@@ -39,12 +44,28 @@ if "--json" in sys.argv:
     sys.stdout = sys.stderr
 
 # ─── 统一环境初始化 ───
+os.environ["SECAGENTX_CLI_QUIET"] = "1"
 from backend.utils.env import init_environment
 init_environment()
 
 from backend.main import load_config, init_application
 from backend.utils.text import strip_md
 from backend.storage.database import Repository
+from backend.interface.terminal_input import create_terminal_input
+
+try:
+    from rich.console import Console, Group
+    from rich.live import Live
+    from rich.spinner import Spinner
+    from rich.markdown import Markdown
+    from rich.panel import Panel
+    from rich.table import Table
+    from rich.text import Text
+
+    RICH_AVAILABLE = True
+except ImportError:  # pragma: no cover - rich is a runtime dependency, fallback is defensive
+    Console = Markdown = Panel = Table = Text = None
+    RICH_AVAILABLE = False
 
 # ─── 常量 ───
 BANNER = """
@@ -56,8 +77,12 @@ BANNER = """
 
 HELP_TEXT = """可用命令:
   /help       显示帮助
+  /new        新建会话
+  /history    查看历史会话；/resume ID 恢复指定会话
   /agents     查看 Agent 状态（含 token 消耗和延迟）
   /stats      查看系统统计（含各 Agent 明细）
+  /model      查看当前 Provider 和模型
+  /export [文件] 导出当前会话为 Markdown
   /auto       查看自动模块（巡检/告警接入/升级通知）状态
   /continue   恢复上次会话（继续之前的对话）
   /cancel     取消当前正在执行的分析
@@ -85,6 +110,8 @@ PROCESS_TIMEOUT_SECONDS = 120   # LLM 分析超时
 # ─── 工具函数 ───
 
 def c(text, color=""):
+    if not sys.stdout.isatty() or os.getenv("NO_COLOR") is not None:
+        return str(text)
     colors = {"green": "\033[92m", "yellow": "\033[93m", "blue": "\033[94m",
               "red": "\033[91m", "cyan": "\033[96m", "bold": "\033[1m", "reset": "\033[0m"}
     return f"{colors.get(color, '')}{text}{colors['reset']}"
@@ -113,6 +140,70 @@ class SecAgentCLI:
         self._running = True
         self._current_task: Optional[asyncio.Task] = None
         self._json_mode = False  # --json 模式下抑制人类可读 stdout 输出
+        self.console = Console(highlight=False, soft_wrap=True) if RICH_AVAILABLE else None
+        self._terminal_input = None
+
+    # ═══════════════════ 终端渲染 ═══════════════════
+
+    @property
+    def _rich_mode(self) -> bool:
+        """交互终端使用 Rich；JSON/管道模式继续保持纯文本协议。"""
+        return bool(self.console and not self._json_mode and sys.stdout.isatty())
+
+    def _render_banner(self, one_shot: bool = False) -> None:
+        if self._rich_mode:
+            title = Text("SecAgentX", style="bold bright_cyan")
+            title.append("  ·  AI 安全智能体", style="bold white")
+            subtitle = Text(
+                "多智能体协同  ·  Agentic-RAG  ·  多厂商模型兼容\n"
+                + ("一次性查询模式" if one_shot else "输入问题开始研判，/help 查看命令"),
+                style="dim",
+            )
+            self.console.print(Panel(
+                Text.assemble(title, "\n", subtitle),
+                border_style="bright_blue",
+                padding=(1, 2),
+                expand=False,
+            ))
+            return
+        print(BANNER)
+        if one_shot:
+            print(c("  一次性查询模式\n", "cyan"))
+        else:
+            print(HELP_TEXT)
+
+    def _render_answer(self, content: str, response_mode: str = "") -> None:
+        """将最终回答渲染成可读面板；机器模式不经过此路径。"""
+        if not content:
+            return
+        if self._rich_mode:
+            if response_mode == "plain_text":
+                self.console.print(Markdown(content))
+                return
+            self.console.print(Panel(
+                Markdown(content),
+                title="SecAgentX · 最终研判",
+                title_align="left",
+                border_style="bright_blue",
+                padding=(1, 2),
+            ))
+            return
+        print(c(strip_md(content), "bold"))
+
+    async def _render_prompt(self) -> str:
+        if self._terminal_input is not None:
+            return (await self._terminal_input.read()).strip()
+        if self._rich_mode:
+            return self.console.input("[bold bright_cyan]你[/] [dim]>[/] ").strip()
+        return input(f"\n{c('你', 'cyan')} > ").strip()
+
+    def _clear_terminal(self) -> None:
+        if self._rich_mode:
+            self.console.clear()
+            self._render_banner()
+            return
+        print("\033[2J\033[H", end="", flush=True)
+        print(BANNER)
 
     # ═══════════════════ 资源管理 ═══════════════════
 
@@ -231,6 +322,17 @@ class SecAgentCLI:
         assistant_content = ""
         total_stats = {}
         final_structured = None
+        previous_sigint = signal.getsignal(signal.SIGINT)
+        loop = asyncio.get_running_loop()
+        def cancel_analysis(signum, frame):
+            if self._current_task and not self._current_task.done():
+                loop.call_soon_threadsafe(self._current_task.cancel)
+        signal_installed = False
+        try:
+            signal.signal(signal.SIGINT, cancel_analysis)
+            signal_installed = True
+        except ValueError:
+            pass  # 非主线程没有信号控制权。
 
         async def _process():
             async for chunk in self.orchestrator.process(text, history_messages=history_messages):
@@ -248,6 +350,8 @@ class SecAgentCLI:
 
             if self._current_task in pending:
                 self._current_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await self._current_task
                 if not json_mode:
                     print(c(f"\n  [超时] 分析超过 {PROCESS_TIMEOUT_SECONDS}s，已取消", "red"))
                 assistant_content = "分析超时，请简化问题后重试"
@@ -256,6 +360,16 @@ class SecAgentCLI:
                 if result:
                     stream_buffer, assistant_content, total_stats, final_structured = result
 
+        except asyncio.CancelledError:
+            if self._current_task:
+                self._current_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await self._current_task
+            if asyncio.current_task().cancelling():
+                raise
+            if not json_mode:
+                print("已取消当前分析，可以继续提问。")
+            assistant_content = "本次分析已取消。"
         except asyncio.TimeoutError:
             if not json_mode:
                 print(c(f"\n  [超时] 分析超过 {PROCESS_TIMEOUT_SECONDS}s，已取消", "red"))
@@ -264,6 +378,9 @@ class SecAgentCLI:
             if not json_mode:
                 print(c(f"\n  [错误] {e}", "red"))
             assistant_content = f"分析异常: {e}"
+        finally:
+            if signal_installed:
+                signal.signal(signal.SIGINT, previous_sigint)
 
         # 保存 LLM 回复
         if assistant_content:
@@ -295,107 +412,61 @@ class SecAgentCLI:
             print(c(f"  统计: {dur:.0f}ms | {tools} 工具调用 | {agents} Agent调用", "bold"))
 
     async def _consume_stream(self, stream, json_mode: bool = False) -> tuple:
-        """
-        消费流式事件，实时输出到终端。
-
-        json_mode 下抑制所有人类可读打印（供脚本/CI 消费纯 JSON），
-        但仍收集 assistant_content / stats / structured_result。
-        返回: (buffer, assistant_content, stats, final_structured)
-        """
-        assistant_content = ""
+        """只将回答事件写入正文，中间执行事件更新同一行状态。"""
         buffer = ""
+        answer = ""
         stats = {}
-        final_structured = None
-        async for chunk in stream:
-            t = chunk.get("type", "")
-
-            if t == "true_react_start":
-                if not json_mode:
-                    print(c(f"  启动: 多智能体协同分析", "yellow"))
-
-            elif t == "true_react_think":
-                if not json_mode:
-                    print(c(f"  思考中...", "yellow"))
-
-            elif t == "true_react_think_content":
-                content = chunk.get("content", "")
-                if content:
-                    buffer += content
-
-            elif t == "stream":
-                content = chunk.get("content", "")
-                if content:
-                    buffer += content
-
-            elif t == "true_react_act":
-                count = chunk.get("tool_calls_count", 0)
-                if not json_mode:
-                    print()
-                    print(c(f"  执行 {count} 个操作:", "green"))
-
-            elif t == "true_react_tool_call":
-                tool = chunk.get("tool_name", "")
-                if not json_mode:
-                    print(c(f"    → 调用: {tool}", "cyan"))
-
-            elif t == "true_react_tool_result":
-                tool = chunk.get("tool_name", "")
-                success = chunk.get("success", False)
-                dur = chunk.get("duration_ms", 0)
-                if not json_mode:
-                    icon = "[OK]" if success else "[FAIL]"
-                    color = "green" if success else "red"
-                    print(c(f"    {icon} {tool} ({dur:.0f}ms)", color))
-
-            elif t == "true_react_agent_route":
-                if not json_mode:
-                    print(c(f"  路由到专业 Agent...", "yellow"))
-
-            elif t == "true_react_agent_dispatch":
-                agent_id = chunk.get("agent_id", "")
-                if not json_mode:
-                    print(c(f"    → {agent_id} 分析中...", "cyan"))
-
-            elif t == "true_react_agent_result":
-                agent_id = chunk.get("agent_id", "")
-                if not json_mode:
-                    print(c(f"    ✓ {agent_id} 完成", "green"))
-
-            elif t == "true_react_round_complete":
-                rnd = chunk.get("round", 0)
-                tc = chunk.get("tool_count", 0)
-                ac = chunk.get("agent_count", 0)
-                if not json_mode:
-                    print(c(f"  第 {rnd} 轮完成（工具={tc}, Agent={ac}）", "blue"))
-
-            elif t in ("true_react_complete", "true_react_max_rounds"):
-                stats = {
-                    "total_duration_ms": chunk.get("total_duration_ms", 0),
-                    "total_tool_calls": chunk.get("total_tool_calls", 0),
-                    "total_agent_calls": chunk.get("total_agent_calls", 0),
-                }
-                # 收集结构化最终结果（--json 模式输出）
-                final_structured = chunk.get("structured_result") or final_structured
-                content = chunk.get("content", "") or chunk.get("summary", "")
-                if content and not assistant_content:
-                    assistant_content = content
-                if not json_mode:
-                    print()
-                    if buffer:
-                        print(c(f"{strip_md(buffer)}", "bold"))
-                    print(c(f"  {'═' * 50}", "blue"))
-                    if t == "true_react_max_rounds":
-                        print(c(f"  达到最大轮次（建议人工复核）", "yellow"))
-                    else:
-                        print(c(f"  完成", "green"))
-
-            elif t == "error":
-                if not json_mode:
-                    print(c(f"  [错误] {chunk.get('content', chunk.get('error', ''))}", "red"))
-
+        structured = None
+        response_mode = ""
+        status = "正在分析 · Ctrl+C 取消"
+        spinner = Spinner("dots", text=status) if self._rich_mode and not json_mode else None
+        progress = Live(spinner, console=self.console, refresh_per_second=8, transient=True) if spinner else None
+        if progress:
+            progress.start()
+        labels = {
+            "true_react_start": "开始分析",
+            "true_react_think": "正在分析",
+            "true_react_agent_route": "分配专业 Agent",
+            "true_react_act": "执行工具",
+            "true_react_round_complete": "汇总结果",
+        }
+        try:
+            async for chunk in stream:
+                kind = chunk.get("type", "")
+                if kind == "stream":
+                    buffer += chunk.get("content") or ""
+                    if progress:
+                        spinner.update(text="正在生成回答 · Ctrl+C 取消")
+                        progress.update(Group(Markdown(buffer), spinner))
+                elif kind in ("true_react_complete", "true_react_max_rounds"):
+                    structured = chunk.get("structured_result") or structured
+                    response_mode = chunk.get("response_mode") or (structured or {}).get("response_mode", "")
+                    answer = chunk.get("content") or chunk.get("summary") or buffer
+                    stats = {key: chunk.get(key, 0) for key in (
+                        "total_duration_ms", "total_tool_calls", "total_agent_calls",
+                    )}
+                elif kind == "error":
+                    answer = "分析失败：" + str(chunk.get("content") or chunk.get("error") or "未知错误")
+                elif progress:
+                    status = labels.get(kind)
+                    if kind in ("true_react_tool_call", "true_react_tool_result"):
+                        status = f"工具 {chunk.get('tool_name', '')} · " + (
+                            ("完成" if chunk.get("success") else "失败") if kind.endswith("result") else "执行中"
+                        )
+                    elif kind in ("true_react_agent_dispatch", "true_react_agent_result"):
+                        status = f"Agent {chunk.get('agent_id', '')} · " + (
+                            "完成" if kind.endswith("result") else "分析中"
+                        )
+                    if status:
+                        spinner.update(text=Text(status + " · Ctrl+C 取消"))
+                        progress.update(spinner)
+        finally:
+            if progress:
+                progress.stop()
+        answer = answer or buffer
         if not json_mode:
-            print()
-        return buffer, assistant_content or buffer, stats, final_structured
+            self._render_answer(answer, response_mode)
+        return buffer, answer, stats, structured
 
     # ═══════════════════ 交互式命令处理 ═══════════════════
 
@@ -511,17 +582,115 @@ class SecAgentCLI:
 
         print(c("  (没有其他历史会话)", "yellow"))
 
+    async def cmd_new(self):
+        """创建一个全新的 CLI 会话，不覆盖已有历史。"""
+        import uuid
+
+        self.conversation_id = f"cli-{uuid.uuid4().hex[:8]}"
+        await self.repo.create_conversation(
+            title=f"CLI对话 {self.conversation_id}",
+            conversation_id=self.conversation_id,
+        )
+        if self._rich_mode:
+            self.console.print(Panel(
+                f"当前会话：{self.conversation_id}",
+                title="新建会话",
+                border_style="green",
+                expand=False,
+            ))
+        else:
+            print(c(f"  新会话: {self.conversation_id}", "green"))
+
+    async def cmd_history(self):
+        """以紧凑表格显示当前 CLI 用户的历史会话。"""
+        conversations = await self.repo.list_conversations(limit=20)
+        if self._rich_mode:
+            table = Table(title="历史会话", border_style="blue", expand=False)
+            table.add_column("当前", justify="center", width=5)
+            table.add_column("会话 ID", overflow="fold")
+            table.add_column("标题", min_width=24, max_width=48)
+            table.add_column("消息", justify="right", width=6)
+            table.add_column("更新时间", width=26)
+            for conv in conversations:
+                table.add_row(
+                    "●" if conv["id"] == self.conversation_id else "",
+                    Text(conv["id"]),
+                    Text(conv.get("title") or conv["id"]),
+                    str(conv.get("message_count", 0)),
+                    conv.get("updated_at", ""),
+                )
+            self.console.print(table)
+            return
+        if not conversations:
+            print(c("  (无历史会话)", "yellow"))
+            return
+        for conv in conversations:
+            marker = "*" if conv["id"] == self.conversation_id else " "
+            print(f" {marker} {conv['id']} | {conv.get('title') or conv['id']} | {conv.get('updated_at', '')}")
+
+    async def cmd_resume(self, conversation_id: str):
+        conversation = await self.repo.get_conversation(conversation_id)
+        if not conversation:
+            print("会话不存在或无权访问。")
+            return
+        self.conversation_id = conversation_id
+        print(f"已恢复：{conversation.get('title') or conversation_id}")
+        for msg in await self.repo.get_messages(conversation_id, limit=500):
+            if msg.get("role") in ("user", "assistant"):
+                if self._rich_mode:
+                    self.console.print("你" if msg["role"] == "user" else "SecAgentX", style="bold cyan")
+                    self.console.print(Markdown(msg.get("content", "")))
+                else:
+                    print(f"{msg['role']}: {msg.get('content', '')}")
+
+    async def cmd_model(self):
+        """显示当前运行时 Provider，不输出 API Key。"""
+        provider = os.getenv("SECAGENTX_ACTIVE_PROVIDER", "") or "未配置"
+        model = os.getenv("SECAGENTX_LLM_MODEL", "")
+        if not model:
+            llm = self.config.get("llm", {}) if isinstance(self.config, dict) else {}
+            provider_cfg = llm.get(provider, {}) if isinstance(llm, dict) else {}
+            model = provider_cfg.get("model", "默认模型") if isinstance(provider_cfg, dict) else "默认模型"
+        text = f"Provider: {provider}\n模型: {model}\n会话: {self.conversation_id}"
+        if self._rich_mode:
+            self.console.print(Panel(text, title="当前运行时", border_style="cyan", expand=False))
+        else:
+            print(c("\n  当前运行时:", "cyan"))
+            print(f"  Provider: {provider}\n  模型: {model}\n  会话: {self.conversation_id}")
+
+    async def cmd_export(self, target: str = ""):
+        """导出当前会话的用户问题和最终回答。"""
+        messages = await self.repo.get_messages(self.conversation_id, limit=500)
+        path = Path(target).expanduser() if target else Path(f"secagentx-{self.conversation_id}.md")
+        lines = [f"# SecAgentX 会话 {self.conversation_id}", ""]
+        for msg in messages:
+            role = "用户" if msg.get("role") == "user" else "SecAgentX"
+            lines.extend([f"## {role}", "", msg.get("content", ""), ""])
+        try:
+            with path.open("x", encoding="utf-8") as output:
+                output.write("\n".join(lines))
+        except FileExistsError:
+            print("文件已存在，请指定新的导出文件名。")
+            return
+        except OSError as exc:
+            print(f"导出失败：{exc}")
+            return
+        if self._rich_mode:
+            self.console.print(f"已导出：{path}", style="green")
+        else:
+            print(c(f"  已导出: {path}", "green"))
+
     # ═══════════════════ 多行输入 ═══════════════════
 
-    def read_multiline(self) -> str:
+    async def read_multiline(self) -> str:
         """读取多行输入（以 ``` 或 \"\"\" 包裹）"""
         lines = []
         while True:
             try:
-                line = input()
+                line = await self._terminal_input.read(continuation=True) if self._terminal_input else input()
             except (EOFError, KeyboardInterrupt):
-                print()
-                return "\n".join(lines)
+                print("\n已取消多行输入，未发送。")
+                return ""
             if line.strip() in ("```", '"""'):
                 return "\n".join(lines)
             lines.append(line)
@@ -530,15 +699,14 @@ class SecAgentCLI:
 
     async def interactive_loop(self):
         """交互式主循环"""
-        print(BANNER)
-        print(HELP_TEXT)
+        self._render_banner()
+        self._terminal_input = create_terminal_input()
 
         await self._ensure_conversation()
 
         while self._running:
             try:
-                prompt = f"\n{c('你', 'cyan')} > "
-                first_line = input(prompt).strip()
+                first_line = await self._render_prompt()
             except (EOFError, KeyboardInterrupt):
                 print()
                 break
@@ -556,7 +724,7 @@ class SecAgentCLI:
             # 多行输入模式
             if first_line in ("```", '"""'):
                 print(c("  (多行模式，输入 ``` 或 \"\"\" 结束)", "yellow"))
-                multiline = self.read_multiline()
+                multiline = await self.read_multiline()
                 if not multiline:
                     continue
                 user_input = multiline
@@ -567,7 +735,25 @@ class SecAgentCLI:
             if user_input == "/exit":
                 break
             elif user_input == "/help":
-                print(HELP_TEXT)
+                if self._rich_mode:
+                    self.console.print(Panel(HELP_TEXT, title="可用命令", border_style="blue", expand=False))
+                else:
+                    print(HELP_TEXT)
+                continue
+            elif user_input == "/new":
+                await self.cmd_new()
+                continue
+            elif user_input == "/history":
+                await self.cmd_history()
+                continue
+            elif user_input.startswith("/resume "):
+                await self.cmd_resume(user_input.split(maxsplit=1)[1])
+                continue
+            elif user_input == "/model":
+                await self.cmd_model()
+                continue
+            elif user_input == "/export" or user_input.startswith("/export "):
+                await self.cmd_export(user_input[len("/export"):].strip())
                 continue
             elif user_input == "/agents":
                 await self.cmd_agents()
@@ -589,8 +775,7 @@ class SecAgentCLI:
                     print(c("  (当前无正在执行的分析)", "yellow"))
                 continue
             elif user_input == "/clear":
-                print("\033[2J\033[H", end="", flush=True)
-                print(BANNER)
+                self._clear_terminal()
                 continue
             elif user_input.startswith("/"):
                 print(c(f"  未知命令: {user_input}，输入 /help 查看帮助", "red"))
@@ -599,14 +784,16 @@ class SecAgentCLI:
             # ─── 执行分析 ───
             await self.run(user_input)
 
-        print(c("\n再见！", "cyan"))
+        if self._rich_mode:
+            self.console.print("再见！", style="bright_cyan")
+        else:
+            print(c("\n再见！", "cyan"))
 
     async def run_once(self, query: str, json_mode: bool = False):
         """一次性查询模式"""
         self._json_mode = json_mode
         if not json_mode:
-            print(BANNER)
-            print(c(f"  一次性查询模式\n", "cyan"))
+            self._render_banner(one_shot=True)
         await self._ensure_conversation()
         await self.run(query, json_mode=json_mode)
 
@@ -653,8 +840,6 @@ def main():
 
     async def _main():
         cli = SecAgentCLI(conversation_id=args.conversation_id or "")
-        loop = asyncio.get_running_loop()
-        _setup_signal_handlers(cli, loop)
 
         try:
             if args.query:

@@ -42,6 +42,16 @@ _PROVIDER_RUNTIME_KEYS = (
 
 
 @pytest.fixture(autouse=True)
+def isolate_circuit_breaker(monkeypatch, setup_test_env):
+    """测试失败也必须恢复熔断器，不能污染下一条封禁安全用例。"""
+    from importlib import import_module
+    module = import_module('backend.security.circuit_breaker')
+    fresh = module.CircuitBreaker()
+    for key, value in vars(fresh).items():
+        monkeypatch.setattr(module.circuit_breaker, key, value)
+
+
+@pytest.fixture(autouse=True)
 def setup_test_env():
     """每个测试用例独立临时目录，避免污染数据"""
     with tempfile.TemporaryDirectory() as tmpdir:

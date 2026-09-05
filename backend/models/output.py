@@ -576,6 +576,64 @@ _ANSWER_MODE_DOMAIN_RE = re.compile(
     r"[a-z]{2,63}(?![\w.-])"
 )
 
+# 面向用户的展示模式。answer_mode 是内部路由（free/rag/analysis），
+# response_mode 是前端展示契约，二者刻意分离，避免把知识检索误渲染成事件报告。
+RESPONSE_MODES = {
+    "plain_text",             # 概念、定义、原理、普通问答
+    "ioc_card",               # IP/域名/哈希等 IOC 查询
+    "investigation_report",   # 告警、攻击、漏洞和综合研判
+    "incident_report",        # 应急响应和处置任务
+    "checklist",              # 配置、加固、合规和操作清单
+}
+_KNOWLEDGE_QUESTION_MARKERS = (
+    "什么是", "什么叫", "是什么", "概念", "含义", "原理", "介绍",
+    "解释", "科普", "简介", "怎么理解", "如何理解", "区别是什么",
+)
+_ACTION_QUERY_MARKERS = (
+    "检测", "分析", "查询", "告警", "日志", "排查", "封禁", "处置",
+    "修复", "加固", "防御", "防止", "是否恶意", "怎么做", "如何做",
+)
+
+
+def is_plain_knowledge_query(text: str, template_type: str = "", answer_mode: str = "") -> bool:
+    """判断是否应以无卡片的纯文本回答。
+
+    这条规则覆盖 LLM 分类器偶尔把“什么是 SQL 注入”标成攻击检测的情况，
+    但会避开“如何防御/检测/分析”这类需要行动建议的安全任务。
+    """
+    query = (text or "").strip().lower()
+    if not query:
+        return False
+    marker_hit = any(marker in query for marker in _KNOWLEDGE_QUESTION_MARKERS)
+    if not marker_hit:
+        return (
+            template_type == "安全知识"
+            and answer_mode in {"free", "rag"}
+            and not any(marker in query for marker in _ACTION_QUERY_MARKERS)
+        )
+    return not any(marker in query for marker in _ACTION_QUERY_MARKERS)
+
+
+def select_response_mode(
+    template_type: str,
+    text: str = "",
+    *,
+    answer_mode: str = "",
+    needs_human: bool = False,
+) -> str:
+    """根据意图和问题场景选择前端展示契约。"""
+    if is_plain_knowledge_query(text, template_type, answer_mode):
+        return "plain_text"
+    if template_type == "威胁情报":
+        return "ioc_card"
+    # 需要人工复核是状态，不等同于应急处置场景；例如漏洞报告证据不足时
+    # 仍应保持“漏洞分析”展示，避免把所有异常都命名为应急报告。
+    if template_type == "应急响应":
+        return "incident_report"
+    if template_type == "安全配置":
+        return "checklist"
+    return "investigation_report"
+
 
 def predict_answer_mode(template_type: str, text: str) -> str:
     """确定性预判回答路径，避免把 IOC 查询误当闲聊或知识问答。"""
@@ -623,6 +681,7 @@ class FinalResult(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     status: str = "completed"          # completed | max_rounds | timeout | error
+    response_mode: str = "investigation_report"  # 前端展示契约（不等同于 answer_mode）
     conversation_id: str = ""
     rounds: int = 0
     total_tool_calls: int = 0

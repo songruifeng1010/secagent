@@ -86,12 +86,56 @@ class ConversationRepository:
             raise ConversationAccessDenied("会话不存在或无权访问")
         return conversation
 
-    async def list_conversations(self, limit: int = 20) -> list[dict]:
-        return await self._fetch_all(
-            "SELECT * FROM conversations WHERE owner_id = ? "
-            "ORDER BY updated_at DESC LIMIT ?",
-            (self.owner_id, max(1, min(int(limit), 200))),
+    async def list_conversations(self, limit: int = 20, query: str = "") -> list[dict]:
+        """列出有实际内容的会话；置顶项始终排在最前。"""
+        safe_limit = max(1, min(int(limit), 200))
+        search = " ".join((query or "").split())[:80]
+        sql = (
+            "SELECT c.*, COUNT(m.id) AS message_count FROM conversations c "
+            "LEFT JOIN messages m ON m.conversation_id = c.id "
+            "WHERE c.owner_id = ? "
         )
+        params: tuple = (self.owner_id,)
+        if search:
+            sql += "AND LOWER(c.title) LIKE LOWER(?) "
+            params += (f"%{search}%",)
+        sql += (
+            "GROUP BY c.id HAVING COUNT(m.id) > 0 "
+            "ORDER BY c.pinned DESC, c.updated_at DESC LIMIT ?"
+        )
+        return await self._fetch_all(sql, params + (safe_limit,))
+
+    async def update_conversation(
+        self,
+        conversation_id: str,
+        *,
+        title: Optional[str] = None,
+        pinned: Optional[bool] = None,
+    ) -> dict:
+        """更新用户可编辑的会话元数据，并返回最新记录。"""
+        await self.require_conversation(conversation_id)
+        updates: list[str] = []
+        params: list[object] = []
+        if title is not None:
+            cleaned = " ".join(title.split())[:80]
+            if not cleaned:
+                raise ValueError("会话标题不能为空")
+            updates.append("title = ?")
+            params.append(cleaned)
+        if pinned is not None:
+            updates.append("pinned = ?")
+            params.append(1 if pinned else 0)
+        if not updates:
+            return await self.require_conversation(conversation_id)
+        updates.append("updated_at = ?")
+        params.append(self._utc_now_iso())
+        params.extend((conversation_id, self.owner_id))
+        await self._execute(
+            "UPDATE conversations SET " + ", ".join(updates)
+            + " WHERE id = ? AND owner_id = ?",
+            tuple(params),
+        )
+        return await self.require_conversation(conversation_id)
 
     async def save_message(
         self,

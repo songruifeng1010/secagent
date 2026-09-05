@@ -12,6 +12,7 @@ conversations = Table(
     Column("id", String, primary_key=True),
     Column("owner_id", String, nullable=False),
     Column("title", String, server_default=""),
+    Column("pinned", Integer, nullable=False, server_default="0"),
     Column("created_at", String, nullable=False),
     Column("updated_at", String, nullable=False),
 )
@@ -129,6 +130,7 @@ Index("idx_assets_hostname", assets.c.hostname)
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS conversations (
     id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, title TEXT DEFAULT '',
+    pinned INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS messages (

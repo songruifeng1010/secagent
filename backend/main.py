@@ -133,6 +133,7 @@ def _migrate_sqlite_schema(conn):
             "UPDATE conversations SET owner_id = ? WHERE owner_id = ''",
             (legacy_owner,),
         )
+    _ensure_column("conversations", "pinned", "INTEGER NOT NULL DEFAULT 0")
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_conversations_owner "
         "ON conversations(owner_id)"

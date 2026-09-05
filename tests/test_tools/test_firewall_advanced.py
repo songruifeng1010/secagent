@@ -134,9 +134,13 @@ class TestMockExpiry:
 
 class TestCircuitBreakerIntegration:
     @pytest.fixture(autouse=True)
-    def _save_restore_cb(self):
+    def _save_restore_cb(self, monkeypatch):
         """保存并在测试后恢复熔断器完整状态"""
         from backend.security.circuit_breaker import circuit_breaker
+        from datetime import datetime, timezone
+        # 构造“今天刚触发”的状态，避免被合法的每日重置/半开超时清除。
+        monkeypatch.setattr(circuit_breaker, '_last_failure_time', time.time())
+        monkeypatch.setattr(circuit_breaker, '_last_reset_date', datetime.now(timezone.utc).strftime('%Y-%m-%d'))
         saved = (circuit_breaker._state, circuit_breaker._failures,
                  circuit_breaker._total_blocks_today)
         yield

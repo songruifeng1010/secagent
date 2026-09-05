@@ -47,12 +47,16 @@
           </n-tag>
           <div style="display:flex; gap:8px; flex-wrap:wrap; margin-left:8px;">
             <n-button size="small" :loading="dispatching" @click="dispatchEvent('confirm')">确认事件</n-button>
+            <n-button size="small" quaternary :loading="dispatching" @click="dispatchEvent('ignore')">标记误报</n-button>
             <n-button size="small" type="warning" :loading="dispatching" @click="dispatchEvent('escalate')">升级处置</n-button>
             <n-button v-if="event.source_ip" size="small" type="error" :loading="dispatching" @click="confirmFirewallBlock">封禁来源 IP</n-button>
           </div>
         </div>
         <div style="margin-top:12px; color:#94a3b8; font-size:11px; line-height:1.5;">
           事件状态更新由本机控制台直接记录；封禁会弹出二次确认，且仍受防火墙白名单、熔断器和后端开关约束。
+        </div>
+        <div v-if="event.resolution" style="margin-top:6px; color:#60a5fa; font-size:11px;">
+          人工反馈：{{ feedbackLabel(event.resolution) }}<span v-if="event.resolved_by"> · {{ event.resolved_by }}</span>
         </div>
       </n-card>
 
@@ -84,7 +88,7 @@
           <div>
             <div style="color: #64748b; font-size: 11px; font-weight: 600; margin-bottom: 4px;">MITRE ATT&CK</div>
             <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px;">
-              <n-tag v-for="tech in event.techniques" :key="tech.id" size="small" color="#1e3a5f" style="color: #fbbf24; border: 1px solid #334155;">
+              <n-tag v-for="tech in event.techniques" :key="tech.id" size="small" :color="{ color: '#1e3a5f' }" style="color: #fbbf24; border: 1px solid #334155;">
                 {{ tech.id }} {{ tech.name }}
               </n-tag>
               <span v-if="!event.techniques || event.techniques.length === 0" style="color: #64748b; font-size: 13px;">无映射</span>
@@ -99,16 +103,16 @@
           <div>
             <div style="color: #64748b; font-size: 11px; font-weight: 600; margin-bottom: 4px;">THREAT ASSOCIATIONS</div>
             <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px;">
-              <n-tag v-if="event.cve_id" size="small" color="#3b1f1f" style="color: #fca5a5; border: 1px solid #7f1d1d;">
+              <n-tag v-if="event.cve_id" size="small" :color="{ color: '#3b1f1f' }" style="color: #fca5a5; border: 1px solid #7f1d1d;">
                 🛡️ {{ event.cve_id }}
               </n-tag>
-              <n-tag v-if="event.actor_name" size="small" color="#1e3a5f" style="color: #93c5fd; border: 1px solid #1e40af;">
+              <n-tag v-if="event.actor_name" size="small" :color="{ color: '#1e3a5f' }" style="color: #93c5fd; border: 1px solid #1e40af;">
                 🕵️ {{ event.actor_name }}<span v-if="event.actor_country" style="color: #64748b; margin-left: 4px;">({{ event.actor_country }})</span>
               </n-tag>
-              <n-tag v-if="event.malware_name" size="small" color="#3b1f3b" style="color: #f0abfc; border: 1px solid #86198f;">
+              <n-tag v-if="event.malware_name" size="small" :color="{ color: '#3b1f3b' }" style="color: #f0abfc; border: 1px solid #86198f;">
                 💀 {{ event.malware_name }}
               </n-tag>
-              <n-tag v-if="event.threat_level === 'high'" size="small" color="#3b1f1f" style="color: #fbbf24; border: 1px solid #92400e;">
+              <n-tag v-if="event.threat_level === 'high'" size="small" :color="{ color: '#3b1f1f' }" style="color: #fbbf24; border: 1px solid #92400e;">
                 高置信度威胁
               </n-tag>
               <span v-if="!event.cve_id && !event.actor_name && !event.malware_name" style="color: #64748b; font-size: 13px;">无关联</span>
@@ -118,7 +122,7 @@
           <div>
             <div style="color: #64748b; font-size: 11px; font-weight: 600; margin-bottom: 4px;">SOURCE IP</div>
             <div style="display: flex; align-items: center; gap: 6px;">
-              <n-tag size="small" color="#1e293b" style="color: #60a5fa; border: 1px solid #334155;">
+              <n-tag size="small" :color="{ color: '#1e293b' }" style="color: #60a5fa; border: 1px solid #334155;">
                 <template #icon><span style="color: #3b82f6;">&#9679;</span></template>
                 {{ event.source_ip }}
               </n-tag>
@@ -140,10 +144,10 @@
             <div style="color: #64748b; font-size: 11px; font-weight: 600; margin-bottom: 4px;">DATA SOURCE</div>
             <div style="color: #a5d6ff; font-size: 13px;">{{ event.source || '—' }}</div>
             <div v-if="event.threat_sources && event.threat_sources.length" style="display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px;">
-              <n-tag v-for="src in event.threat_sources.slice(0,3)" :key="src" size="tiny" color="#1e293b" style="color: #94a3b8; font-size: 10px;">
+              <n-tag v-for="src in event.threat_sources.slice(0,3)" :key="src" size="tiny" :color="{ color: '#1e293b' }" style="color: #94a3b8; font-size: 10px;">
                 {{ src }}
               </n-tag>
-              <n-tag v-if="event.threat_sources.length > 3" size="tiny" color="#1e293b" style="color: #64748b;">+{{ event.threat_sources.length - 3 }}</n-tag>
+              <n-tag v-if="event.threat_sources.length > 3" size="tiny" :color="{ color: '#1e293b' }" style="color: #64748b;">+{{ event.threat_sources.length - 3 }}</n-tag>
             </div>
           </div>
           <!-- Timestamp -->
@@ -159,7 +163,7 @@
         <template #header>
           <div style="display: flex; align-items: center; gap: 8px;">
             <span style="color: #22c55e; font-size: 16px; font-weight: 600;">AI Analysis</span>
-            <n-tag size="tiny" color="#1e293b" style="color: #94a3b8;">Agent-Intel &middot; Analyst</n-tag>
+            <n-tag size="tiny" :color="{ color: '#1e293b' }" style="color: #94a3b8;">Agent-Intel &middot; Analyst</n-tag>
           </div>
         </template>
 
@@ -169,12 +173,41 @@
         </div>
       </n-card>
 
-      <!-- ====== 卡片4: IOC & 技术详表 ====== -->
+      <!-- ====== 卡片4: 风险信号融合 ====== -->
+      <n-card v-if="fusionSignals.length > 0" :bordered="true" size="small" style="background: #171923; margin-bottom: 16px; border-radius: 8px;">
+        <template #header>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="color: #60a5fa; font-size: 14px; font-weight: 600;">风险信号融合</span>
+            <n-tag size="tiny" :color="{ color: '#1e293b' }" style="color: #94a3b8;">{{ fusionSignals.length }} 个信号</n-tag>
+            <div style="flex: 1;" />
+            <n-tag size="small" :type="fusionTagType(fusion.risk_level)">{{ fusion.risk_level || '低危' }}</n-tag>
+          </div>
+        </template>
+        <div style="display: flex; align-items: center; gap: 18px; margin-bottom: 14px;">
+          <div style="font-size: 28px; font-weight: 800; color: #60a5fa;">{{ Math.round((fusion.risk_score || 0) * 100) }}%</div>
+          <div style="flex: 1; height: 8px; border-radius: 4px; background: #2a2d38; overflow: hidden;">
+            <div :style="{ width: `${Math.round((fusion.risk_score || 0) * 100)}%`, height: '100%', borderRadius: '4px', background: '#60a5fa' }"></div>
+          </div>
+          <span style="color: #94a3b8; font-size: 12px;">建议：{{ fusionActionLabel(fusion.recommended_action) }}</span>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 8px;">
+          <div v-for="signal in fusionSignals" :key="signal.name" style="background: #0f1117; border: 1px solid #2a2d38; border-radius: 6px; padding: 9px 10px;">
+            <div style="display: flex; justify-content: space-between; gap: 8px; color: #94a3b8; font-size: 11px;">
+              <span>{{ signalLabel(signal.name) }}</span><span>{{ Math.round((signal.score || 0) * 100) }}%</span>
+            </div>
+            <div style="height: 4px; margin-top: 7px; border-radius: 2px; background: #2a2d38; overflow: hidden;">
+              <div :style="{ width: `${Math.round((signal.score || 0) * 100)}%`, height: '100%', background: confidenceBarColor(signal.score) }"></div>
+            </div>
+          </div>
+        </div>
+      </n-card>
+
+      <!-- ====== 卡片5: IOC & 技术详表 ====== -->
       <n-card :bordered="true" size="small" style="background: #171923; margin-bottom: 16px; border-radius: 8px;">
         <template #header>
           <div style="display: flex; align-items: center; gap: 12px;">
             <span style="color: #e2e8f0; font-size: 14px; font-weight: 600;">IOC &amp; 技术映射</span>
-            <n-tag size="tiny" color="#1e293b" style="color: #94a3b8;">{{ iocList.length }} 项IOC &middot; {{ event.techniques ? event.techniques.length : 0 }} 项技术</n-tag>
+            <n-tag size="tiny" :color="{ color: '#1e293b' }" style="color: #94a3b8;">{{ iocList.length }} 项IOC &middot; {{ event.techniques ? event.techniques.length : 0 }} 项技术</n-tag>
           </div>
         </template>
 
@@ -208,7 +241,7 @@
                 </div>
                 <!-- 战术阶段标签 -->
                 <div v-if="tech.tactic" style="margin-top: 4px;">
-                  <n-tag size="tiny" color="#1e293b" style="color: #94a3b8;">{{ tech.tactic }}</n-tag>
+                  <n-tag size="tiny" :color="{ color: '#1e293b' }" style="color: #94a3b8;">{{ tech.tactic }}</n-tag>
                 </div>
               </div>
             </div>
@@ -217,12 +250,12 @@
         </div>
       </n-card>
 
-      <!-- ====== 卡片5: 响应建议 ====== -->
+      <!-- ====== 卡片6: 响应建议 ====== -->
       <n-card :bordered="true" size="small" style="background: #171923; margin-bottom: 16px; border-radius: 8px;">
         <template #header>
           <div style="display: flex; align-items: center; gap: 8px;">
             <span style="color: #22c55e; font-size: 14px; font-weight: 600;">Recommendations</span>
-            <n-tag size="tiny" color="#1e293b" style="color: #94a3b8;">Agent-Responder</n-tag>
+            <n-tag size="tiny" :color="{ color: '#1e293b' }" style="color: #94a3b8;">Agent-Responder</n-tag>
           </div>
         </template>
 
@@ -239,7 +272,7 @@
         <div v-else style="color: #475569; font-size: 13px;">无建议</div>
       </n-card>
 
-      <!-- ====== 卡片6: 原始告警数据 ====== -->
+      <!-- ====== 卡片7: 原始告警数据 ====== -->
       <n-card :bordered="true" size="small" style="background: #171923; margin-bottom: 16px; border-radius: 8px;">
         <template #header>
           <span style="color: #e2e8f0; font-size: 14px; font-weight: 600;">原始数据</span>
@@ -334,6 +367,9 @@ const loading = ref(true)
 const event = ref(null)
 const dispatching = ref(false)
 
+const fusion = computed(() => event.value?.risk_fusion || {})
+const fusionSignals = computed(() => Array.isArray(fusion.value.signals) ? fusion.value.signals : [])
+
 const iocList = computed(() => {
   if (!event.value) return []
   const values = Array.isArray(event.value.iocs) ? event.value.iocs : []
@@ -356,6 +392,10 @@ function statusMapType(status) { return { open: 'error', investigating: 'warning
 function statusLabel(status) { return { open: '待处理', investigating: '调查中', confirmed: '已确认', escalated: '已升级', blocked: '已封禁', ignored: '已忽略', resolved: '已解决', closed: '已关闭' }[status] || status || '未知' }
 function confidenceBarColor(value) { return Number(value) >= 0.8 ? '#22c55e' : Number(value) >= 0.5 ? '#eab308' : '#ef4444' }
 function confidenceTextColor(value) { return confidenceBarColor(value) }
+function signalLabel(name) { return { llm: 'LLM', ml: 'ML', rule: '规则', rag: 'RAG', severity: '严重度' }[name] || String(name || '').toUpperCase() }
+function fusionTagType(level) { return { 紧急: 'error', 高危: 'error', 中危: 'warning', 低危: 'success' }[level] || 'default' }
+function fusionActionLabel(action) { return { block_review: '封禁复核', manual_confirm: '人工确认', monitor: '持续观察', record: '记录' }[action] || action || '人工复核' }
+function feedbackLabel(resolution) { return { confirmed_true_positive: '确认真实威胁', confirmed_false_positive: '确认误报', operator_confirmed: '人工确认', operator_ignored: '人工忽略', operator_escalated: '人工升级', firewall_blocked: '已封禁' }[resolution] || resolution }
 function iocColor(type) { return { ip: '#60a5fa', domain: '#c084fc', hash: '#f59e0b', url: '#34d399' }[type] || '#94a3b8' }
 function iocLabel(type) { return { ip: 'IP', domain: '域名', hash: 'HASH', url: 'URL', indicator: 'IOC' }[type] || String(type || 'IOC').toUpperCase() }
 function copyText(value) {
@@ -385,7 +425,7 @@ async function submitDispatch(payload, successText) {
 }
 
 function dispatchEvent(action) {
-  const labels = { confirm: '确认', escalate: '升级' }
+  const labels = { confirm: '确认', ignore: '标记误报', escalate: '升级' }
   void submitDispatch({
     action,
     event_id: event.value.id,

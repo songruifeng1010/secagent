@@ -54,6 +54,14 @@ async def test_firewall_dispatch_requires_explicit_local_confirmation(app):
     assert "确认" in response.json()["detail"]
 
 
+@pytest.mark.asyncio
+async def test_event_feedback_export_is_available(app):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/events/feedback")
+    assert response.status_code == 200
+    assert "feedback" in response.json()
+
+
 def test_cors_includes_runtime_loopback_port(monkeypatch):
     monkeypatch.setenv("SECAGENTX_PORT", "8765")
     monkeypatch.setenv("SECAGENTX_ACTIVE_PROVIDER", "mock")

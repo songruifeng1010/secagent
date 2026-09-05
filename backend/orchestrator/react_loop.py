@@ -34,7 +34,7 @@ from .risk_scorer import RiskScorer
 from ..models.output import (
     AgentResult, EvidencePackage, Finding, FinalResult, FinalVerdict,
     FinalSummary, build_final_result, parse_final_summary, final_to_markdown,
-    predict_answer_mode,
+    predict_answer_mode, select_response_mode, is_plain_knowledge_query,
 )
 from ..decision_fusion import FusionEngineFactory
 
@@ -529,6 +529,7 @@ class TrueReActLoop:
 
         knowledge_result = {
             "status": "completed",
+            "response_mode": "plain_text",
             "conversation_id": conversation_id,
             "rounds": 1,
             "needs_human": False,
@@ -569,6 +570,7 @@ class TrueReActLoop:
             "tool_call_history": [],
             "structured_result": knowledge_result,
             "answer_mode": "rag",
+            "response_mode": "plain_text",
             "score": None,
         }
 
@@ -620,6 +622,7 @@ class TrueReActLoop:
             "tool_call_history": [],
             "structured_result": None,
             "answer_mode": "free",
+            "response_mode": "plain_text",
             "score": None,
         }
 
@@ -643,6 +646,13 @@ class TrueReActLoop:
             "is_knowledge_query": (kw_type == "安全知识"),
             "answer_mode": predict_answer_mode(kw_type, text),
         }
+
+        # 定义/概念类问题优先按知识问答处理，避免分类器把“什么是 SQL 注入”
+        # 误判成攻击事件，进而展示风险评分和研判卡片。
+        if is_plain_knowledge_query(text, kw_type, base["answer_mode"]):
+            base["template_type"] = "安全知识"
+            base["is_knowledge_query"] = True
+            base["answer_mode"] = predict_answer_mode("安全知识", text)
 
         info = self.orchestrator.agents.get("classifier-001")
         if not info or not info.enabled:
@@ -672,6 +682,10 @@ class TrueReActLoop:
                     "answer_mode",
                     predict_answer_mode(result["template_type"], text),
                 )
+                if is_plain_knowledge_query(text, result.get("template_type", ""), result.get("answer_mode", "")):
+                    result["template_type"] = "安全知识"
+                    result["is_knowledge_query"] = True
+                    result["answer_mode"] = predict_answer_mode("安全知识", text)
                 logger.info("[classifier] 意图识别: %s（%s）is_knowledge=%s",
                             result["template_type"], result.get("category_reason", ""),
                             result["is_knowledge_query"])
@@ -728,6 +742,7 @@ class TrueReActLoop:
         target_ip: Optional[str] = None,
         task: str = "",
         template_type: str = "",
+        response_mode: str = "",
     ) -> FinalResult:
         """
         组装编排器最终结构化结果（FinalResult JSON）。
@@ -884,6 +899,7 @@ class TrueReActLoop:
 
         final_result = build_final_result(
             status=status,
+            response_mode=response_mode or select_response_mode(template_type, task),
             conversation_id=conversation_id,
             rounds=rounds,
             total_tool_calls=total_tool_calls,
@@ -1222,8 +1238,10 @@ class TrueReActLoop:
                         "summary": "输入被对抗防护策略拦截",
                         "total_duration_ms": elapsed,
                         "needs_human_intervention": True,
+                        "response_mode": "plain_text",
                         "structured_result": {
                             "status": "blocked",
+                            "response_mode": "plain_text",
                             "conversation_id": conversation_id,
                             "is_adversarial_blocked": True,
                             "adversarial": decision,
@@ -1384,6 +1402,10 @@ class TrueReActLoop:
                         )
                         final_result = build_final_result(
                             status="timeout",
+                            response_mode=select_response_mode(
+                                template_type, text, answer_mode=answer_mode,
+                                needs_human=True,
+                            ),
                             conversation_id=conversation_id,
                             rounds=rnd,
                             total_tool_calls=total_tool_calls,
@@ -1411,6 +1433,7 @@ class TrueReActLoop:
                             "needs_human_intervention": True,
                             # 新增字段
                             "structured_result": final_result.model_dump(mode="json"),
+                            "response_mode": final_result.response_mode,
                             "agent_trace": trace_events,
                             "score": final_result.score,
                         }
@@ -1470,6 +1493,10 @@ class TrueReActLoop:
                 )
                 final_result = build_final_result(
                     status="error",
+                    response_mode=select_response_mode(
+                        template_type, text, answer_mode=answer_mode,
+                        needs_human=True,
+                    ),
                     conversation_id=conversation_id,
                     rounds=rnd,
                     total_tool_calls=total_tool_calls,
@@ -1497,6 +1524,7 @@ class TrueReActLoop:
                     "needs_human_intervention": True,
                     # 新增字段
                     "structured_result": final_result.model_dump(mode="json"),
+                    "response_mode": final_result.response_mode,
                     "agent_trace": trace_events,
                     "score": final_result.score,
                 }
@@ -1545,6 +1573,9 @@ class TrueReActLoop:
                     target_ip=target_ip,
                     task=text,
                     template_type=template_type,
+                    response_mode=select_response_mode(
+                        template_type, text, answer_mode=answer_mode,
+                    ),
                 )
                 content_text = final_to_markdown(final_result)
 
@@ -1568,6 +1599,7 @@ class TrueReActLoop:
                     "risk_scorecard": risk_scorecard,
                     # 新增字段（兼容迁移：旧字段全部保留）
                     "structured_result": final_result.model_dump(mode="json"),
+                    "response_mode": final_result.response_mode,
                     "agent_trace": trace_events,
                     "score": final_result.score,
                 }
@@ -1872,6 +1904,10 @@ class TrueReActLoop:
             target_ip=target_ip,
             task=text,
             template_type=template_type,
+            response_mode=select_response_mode(
+                template_type, text, answer_mode=answer_mode,
+                needs_human=True,
+            ),
         )
         content_text = final_to_markdown(final_result)
 
@@ -1890,6 +1926,7 @@ class TrueReActLoop:
             "risk_scorecard": risk_scorecard,
             # 新增字段
             "structured_result": final_result.model_dump(mode="json"),
+            "response_mode": final_result.response_mode,
             "agent_trace": trace_events,
             "score": final_result.score,
         }

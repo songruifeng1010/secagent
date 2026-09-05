@@ -4,9 +4,9 @@ test.describe('本机无登录控制台', () => {
   test('直接进入对话控制台，不显示登录流程', async ({ page }) => {
     await page.goto('/')
 
-    await expect(page.getByText('仅本机模式 · 无登录')).toBeVisible()
+    await expect(page.getByText('仅本机模式 · 无登录')).toHaveCount(0)
     await expect(page.locator('.chat-input')).toBeVisible()
-    await expect(page.getByRole('button', { name: '新建对话' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '新建研判' })).toBeVisible()
     await expect(page).not.toHaveURL(/login/)
   })
 

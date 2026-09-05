@@ -33,6 +33,7 @@ pydantic-settings>=2.0.0
 
 # --- 通用 ---
 rich>=13.7.0
+prompt-toolkit>=3.0.43,<4
 aiofiles>=23.2.0
 numpy>=1.26.0
 

@@ -198,6 +198,36 @@ class TestAutoIngestorDecision:
         # 保守策略：升级人工
         assert result["action"] == "escalated"
 
+    @pytest.mark.asyncio
+    async def test_structured_result_confidence_is_used(self, mock_orchestrator, config):
+        """优先使用编排器返回的结构化置信度，不依赖文本标记。"""
+        async def mock_process_structured(text, history_messages=None):
+            yield {
+                "type": "true_react_complete",
+                "content": "分析完毕（纯文本）",
+                "structured_result": {
+                    "verdict": {
+                        "verdict": "malicious",
+                        "confidence": 0.91,
+                        "risk_level": "高危",
+                        "recommended_action": "block",
+                    }
+                },
+                "summary": "结构化结果",
+            }
+        mock_orchestrator.process = mock_process_structured
+
+        from backend.auto_ingestor import AutoIngestor
+        ingestor = AutoIngestor(mock_orchestrator, escalator=None, config=config)
+        result = await ingestor.handle_alert_direct({
+            "id": "test-structured-confidence-001",
+            "title": "结构化结果告警",
+            "src_ip": "45.33.32.157",
+        })
+
+        assert result["action"] == "auto_closed"
+        assert result["confidence"] == pytest.approx(0.91)
+
 
 class TestAutoIngestorCircuitBreaker:
     """熔断器联动测试"""

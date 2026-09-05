@@ -1,32 +1,63 @@
 <template>
   <div class="chat-view">
-    <!-- 会话侧边栏 -->
-    <div class="conv-sidebar">
+    <!-- 研判会话中心：只呈现用户可理解的标题和时间，不暴露 WebSocket 编号。 -->
+    <aside class="conv-sidebar" aria-label="研判会话中心">
+      <div class="conv-sidebar-head">
+        <div><span class="conv-kicker">SECAGENTX CONSOLE</span><h2>研判会话</h2></div>
+        <span class="conv-total">{{ chatStore.conversations.length }}</span>
+      </div>
       <button class="new-conv-btn" @click="handleNewConversation">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        新建对话
+        新建研判
       </button>
+      <label class="conv-search">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+        <input v-model="historySearch" type="search" placeholder="搜索历史研判" aria-label="搜索历史研判">
+      </label>
+      <div class="template-strip" aria-label="快速研判模板">
+        <button type="button" @click="startTemplate('分析 SSH 暴力破解告警')">告警分析</button>
+        <button type="button" @click="startTemplate('调查以下 IOC：')">IOC 调查</button>
+        <button type="button" @click="startTemplate('查询 MITRE ATT&CK 技术的检测与防御建议：')">ATT&CK</button>
+      </div>
       <div class="conv-list">
         <div v-if="chatStore.convLoading" class="conv-loading">加载中...</div>
         <template v-else>
-          <div
-            v-for="c in chatStore.conversations"
-            :key="c.conversation_id"
-            class="conv-item"
-            :class="{ active: c.conversation_id === chatStore.currentConversationId }"
-            @click="handleResumeConversation(c.conversation_id)"
-            :title="c.title"
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-            <span class="conv-title">{{ c.title || c.conversation_id }}</span>
-          </div>
-          <div v-if="chatStore.conversations.length === 0" class="conv-empty">暂无历史对话</div>
+          <section v-for="group in conversationGroups" :key="group.label" class="conv-group">
+            <h3>{{ group.label }}</h3>
+            <article
+              v-for="c in group.items"
+              :key="c.conversation_id"
+              class="conv-item"
+              :class="{ active: c.conversation_id === chatStore.currentConversationId }"
+              @click="handleResumeConversation(c.conversation_id)"
+              :title="c.title || '未命名研判'"
+            >
+              <div class="conv-item-main">
+                <span class="conv-title"><span v-if="c.pinned" class="pin-mark">⌖</span>{{ c.title || '未命名研判' }}</span>
+                <span class="conv-meta">{{ formatConversationTime(c.updated_at) }} · {{ c.message_count || 0 }} 条消息</span>
+              </div>
+              <div class="conv-actions" @click.stop>
+                <button type="button" :title="c.pinned ? '取消置顶' : '置顶'" @click="togglePinned(c)">{{ c.pinned ? '★' : '☆' }}</button>
+                <button type="button" title="重命名" @click="openRename(c)">✎</button>
+                <button type="button" title="删除" class="delete-action" @click="askDelete(c)">×</button>
+              </div>
+            </article>
+          </section>
+          <div v-if="conversationGroups.length === 0" class="conv-empty">{{ historySearch ? '没有匹配的研判记录' : '尚无历史研判记录' }}</div>
         </template>
       </div>
-    </div>
+    </aside>
 
     <!-- 右侧主区域（消息 + 输入） -->
     <div class="chat-main">
+    <header class="workspace-header">
+      <div><span class="workspace-kicker">ANALYSIS WORKSPACE</span><h1>{{ workspaceTitle }}</h1></div>
+      <div class="workspace-tools">
+        <button class="workspace-action" type="button" :disabled="chatStore.messages.length === 0" @click="exportCurrentConversation">导出 Markdown</button>
+        <button class="workspace-action" type="button" :class="{ active: showProcessDetails }" @click="showProcessDetails = !showProcessDetails">{{ showProcessDetails ? '收起过程' : '查看过程' }}</button>
+        <div class="workspace-status"><span :class="['workspace-dot', wsStatus]" />{{ chatStore.isProcessing ? `正在协同 ${processingAgentCount} 个 Agent` : wsStatusText }}</div>
+      </div>
+    </header>
     <!-- 消息容器 -->
     <div ref="msgContainer" class="msg-list">
       <!-- 空状态 -->
@@ -68,7 +99,7 @@
       </div>
 
       <!-- 消息列表 -->
-      <div v-for="msg in chatStore.messages" :key="msg.id" class="msg-item" :class="'role-' + msg.role">
+      <div v-for="msg in chatStore.messages" v-show="shouldShowMessage(msg)" :key="msg.id" class="msg-item" :class="'role-' + msg.role">
         <!-- 用户消息 -->
         <div v-if="msg.role === 'user'" class="msg-user">
           <div class="msg-bubble user-bubble">
@@ -81,7 +112,7 @@
         <div v-else-if="msg.role === 'agent'" class="msg-agent">
           <div class="msg-bubble agent-bubble">
             <div class="bubble-avatar agent-avatar">AI</div>
-            <div class="bubble-content agent-text" v-html="renderMarkdown(msg.content)" />
+            <div class="agent-message-content"><div class="agent-message-heading">SecAgentX · 研判答复</div><div class="bubble-content agent-text" v-html="renderMarkdown(msg.content)" /></div>
           </div>
         </div>
 
@@ -247,24 +278,25 @@
 
         <!-- 结构化最终结果卡片 (v2.5: 安全事件分析 / 核心发现 / 推荐动作 / 详细分析折叠 / 报告模式 / 事件模板) -->
         <div v-else-if="msg.role === 'structured_result'" class="msg-agent">
-          <div class="sr-card" :class="'tpl-' + srTemplateType(msg.content)">
-            <!-- 头部：安全事件分析 + 报告模式切换 -->
+          <div class="sr-card" :class="['tpl-' + srTemplateType(msg.content), 'mode-' + responseMode(msg.content)]">
+            <!-- 头部：按场景命名，避免把 IOC/配置任务都称作泛化研判报告 -->
             <div class="sr-header">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-              <span class="sr-title">安全事件分析</span>
+              <span class="sr-title">{{ responseModeTitle(msg.content) }}</span>
               <span class="sr-tpl-tag">{{ srTemplateTitle(srTemplateType(msg.content)) }}</span>
               <span class="sr-status">{{ srStatusLabel(msg.content.status) }}</span>
               <span class="sr-mode-switch">
                 <button class="mode-btn" :class="{ 'mode-active': reportMode(msg.id) === 'quick' }" @click="setReportMode(msg.id, 'quick')">快速分析</button>
                 <button class="mode-btn" :class="{ 'mode-active': reportMode(msg.id) === 'expert' }" @click="setReportMode(msg.id, 'expert')">专家报告</button>
+                <button class="mode-btn" type="button" @click="copyMessage(msg)">{{ copiedMessageId === msg.id ? '已复制' : '复制报告' }}</button>
               </span>
             </div>
 
             <!-- 总体判定（v2.6: 风险概率 与 置信度 分离显示） -->
             <div class="sr-main">
-              <span class="sr-score" :class="riskScoreClass(msg.content.score)">{{ msg.content.score }}</span>
+              <span class="sr-score" :class="riskScoreClass(msg.content.score)">{{ formatRiskScore(msg.content.score) }}</span>
               <span class="sr-label">风险评分</span>
-              <span class="sr-decision" :class="confVerdictClass(srVerdict(msg.content))">{{ srVerdict(msg.content) }}</span>
+              <span class="sr-decision" :class="confVerdictClass(srVerdict(msg.content))">{{ verdictLabel(srVerdict(msg.content)) }}</span>
               <span v-if="msg.content.needs_human" class="sr-human">需人工介入</span>
               <span v-if="srVerdict(msg.content) === 'unknown'" class="sr-unknown-hint">证据不足/冲突，置信度不作高估</span>
             </div>
@@ -518,7 +550,6 @@
     <div class="ws-status-bar" :class="'ws-' + wsStatus">
       <span class="ws-dot" />
       <span class="ws-label">{{ wsStatusText }}</span>
-      <span class="ws-boundary">本机控制台 · 无登录 · 仅本机访问</span>
     </div>
 
     <!-- 输入区域 -->
@@ -545,9 +576,24 @@
           <div v-else class="send-spinner" />
         </button>
       </div>
-      <div class="input-hint">分析结果仅供辅助研判；涉及封禁、隔离等动作前请先人工确认。</div>
+      <div class="input-hint"><span>Enter 发送 · Shift + Enter 换行</span><span>分析结果仅供辅助研判；处置前请人工确认。</span></div>
     </div>
     </div><!-- /chat-main -->
+    <div v-if="renameTarget" class="dialog-backdrop" @click.self="renameTarget = null">
+      <form class="conv-dialog" @submit.prevent="saveRename">
+        <span class="dialog-eyebrow">会话管理</span><h2>重命名研判</h2>
+        <input v-model="renameDraft" maxlength="80" autofocus aria-label="研判标题">
+        <p>标题最多 80 个字符，可随时再次修改。</p>
+        <div class="dialog-actions"><button type="button" class="dialog-secondary" @click="renameTarget = null">取消</button><button type="submit" class="dialog-primary">保存</button></div>
+      </form>
+    </div>
+    <div v-if="deleteTarget" class="dialog-backdrop" @click.self="deleteTarget = null">
+      <div class="conv-dialog danger-dialog">
+        <span class="dialog-eyebrow">不可恢复操作</span><h2>删除这条研判？</h2>
+        <p>会话中的消息和关联轨迹都会被永久删除。</p>
+        <div class="dialog-actions"><button type="button" class="dialog-secondary" @click="deleteTarget = null">取消</button><button type="button" class="dialog-danger" @click="confirmDelete">删除会话</button></div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -567,19 +613,78 @@ const inputText = ref('')
 const msgContainer = ref(null)
 const inputRef = ref(null)
 const copiedMessageId = ref('')
+const historySearch = ref('')
+const renameTarget = ref(null)
+const renameDraft = ref('')
+const deleteTarget = ref(null)
+const showProcessDetails = ref(false)
 
 // ─── 会话管理（新建 / 恢复历史） ───
-function handleNewConversation() {
-  chatStore.newConversation()
+async function handleNewConversation() {
+  await chatStore.newConversation()
+  await nextTick()
+  inputRef.value?.focus()
 }
-function handleResumeConversation(convId) {
-  chatStore.resumeConversation(convId)
+async function handleResumeConversation(convId) {
+  await chatStore.resumeConversation(convId)
+}
+async function startTemplate(text) {
+  await handleNewConversation()
+  inputText.value = text
+  await nextTick()
+  inputRef.value?.focus()
+}
+function openRename(conversation) {
+  renameTarget.value = conversation
+  renameDraft.value = conversation.title || ''
+}
+async function saveRename() {
+  const title = renameDraft.value.trim()
+  if (!title || !renameTarget.value) return
+  await chatStore.updateConversation(renameTarget.value.conversation_id, { title })
+  renameTarget.value = null
+}
+async function togglePinned(conversation) {
+  await chatStore.updateConversation(conversation.conversation_id, { pinned: !conversation.pinned })
+}
+function askDelete(conversation) { deleteTarget.value = conversation }
+async function confirmDelete() {
+  if (!deleteTarget.value) return
+  await chatStore.deleteConversation(deleteTarget.value.conversation_id)
+  deleteTarget.value = null
+}
+
+const activeConversation = computed(() => chatStore.conversations.find(
+  c => c.conversation_id === chatStore.currentConversationId,
+))
+const workspaceTitle = computed(() => activeConversation.value?.title || '新建研判')
+const conversationGroups = computed(() => {
+  const groups = new Map([['今天', []], ['昨天', []], ['更早', []]])
+  for (const conversation of chatStore.conversations) {
+    const time = new Date(conversation.updated_at || conversation.created_at || 0)
+    const today = new Date(); today.setHours(0, 0, 0, 0)
+    const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1)
+    const label = time >= today ? '今天' : time >= yesterday ? '昨天' : '更早'
+    groups.get(label).push(conversation)
+  }
+  return [...groups.entries()].filter(([, items]) => items.length).map(([label, items]) => ({ label, items }))
+})
+function formatConversationTime(value) {
+  const time = new Date(value || 0)
+  if (Number.isNaN(time.getTime())) return '刚刚'
+  const now = new Date()
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  if (time >= today) return time.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+  const days = Math.floor((now - time) / 86400000)
+  if (days < 7) return `${Math.max(1, days)} 天前`
+  return time.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })
 }
 
 // 挂载时加载历史会话列表
 onMounted(() => {
   chatStore.fetchConversations()
 })
+watch(historySearch, (value) => { chatStore.fetchConversations(value) })
 
 // 本机控制台不维护账户资料；使用固定标识，避免遗留旧登录态。
 const userInitial = '本'
@@ -591,6 +696,17 @@ const wsStatus = computed(() =>
 const wsStatusText = computed(() =>
   chatStore.wsConnected ? '已连接' : '未连接'
 )
+const processingAgentCount = computed(() => Object.values(chatStore.activeAgents)
+  .filter(agent => agent.status !== 'done' && agent.status !== 'error').length)
+
+// 默认把机器执行细节从对话正文中收起；它们仍会完整保留在“查看过程”和执行时间线中。
+const processRoles = new Set([
+  'analysis_result', 'agent_status_card', 'reasoning_chain', 'reasoner_complete',
+  'cot_start', 'cot_step', 'cot_complete', 'confidence_card', 'risk_card',
+])
+function shouldShowMessage(message) {
+  return showProcessDetails.value || !processRoles.has(message.role)
+}
 
 // ─── 发送消息（委托给 store 的统一 WebSocket） ───
 function sendMessage() {
@@ -602,6 +718,13 @@ function sendMessage() {
 }
 function sendQuick(text) { inputText.value = text; sendMessage() }
 function resetInputHeight() { if (inputRef.value) inputRef.value.style.height = 'auto' }
+
+function formatRiskScore(score) {
+  return Number.isFinite(Number(score)) ? String(Math.round(Number(score))) : '—'
+}
+function verdictLabel(verdict) {
+  return { malicious: '恶意', suspicious: '可疑', benign: '未发现恶意', unknown: '待确认' }[verdict] || '待确认'
+}
 
 function isCopyable(msg) {
   return msg.role === 'agent' || msg.role === 'structured_result' || msg.role === 'cot_complete'
@@ -634,6 +757,27 @@ async function copyMessage(msg) {
   }, 1600)
 }
 
+function exportCurrentConversation() {
+  const title = (workspaceTitle.value || 'SecAgentX-研判').replace(/[\\/:*?"<>|]/g, '-').slice(0, 60)
+  const exportedAt = new Date().toLocaleString('zh-CN', { hour12: false })
+  const body = chatStore.messages
+    .filter(message => ['user', 'agent', 'structured_result'].includes(message.role))
+    .map((message) => {
+      const heading = message.role === 'user' ? '提问' : message.role === 'structured_result' ? responseModeTitle(message.content) : 'SecAgentX 答复'
+      return `## ${heading}\n\n${messageText(message)}\n`
+    }).join('\n')
+  const markdown = `# ${title}\n\n> 从 SecAgentX 本机控制台导出\n> 导出时间：${exportedAt}\n\n${body || '暂无可导出的对话内容。'}\n`
+  const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `${title}.md`
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
 // ─── 自动滚动 ───
 watch(() => chatStore.messages.length, async () => { await nextTick(); if (msgContainer.value) msgContainer.value.scrollTop = msgContainer.value.scrollHeight })
 watch(inputText, () => { nextTick(() => { if (inputRef.value) { inputRef.value.style.height = 'auto'; inputRef.value.style.height = Math.min(inputRef.value.scrollHeight, 120) + 'px' } }) })
@@ -662,6 +806,7 @@ function riskLevelClass(level) {
   return { '高危': 'risk-level-high', '中危': 'risk-level-mid', '低危': 'risk-level-low' }[level] || 'risk-level-low'
 }
 function riskScoreClass(score) {
+  if (!Number.isFinite(Number(score))) return ''
   if (score >= 60) return 'risk-score-high'
   if (score >= 20) return 'risk-score-mid'
   return 'risk-score-low'
@@ -698,6 +843,18 @@ function riskProbClass(p) {
 }
 function srStatusLabel(s) {
   return { completed: '分析完成', max_rounds: '达到最大轮次', timeout: '超时熔断', error: '异常终止' }[s] || '完成'
+}
+
+function responseMode(c) {
+  return c?.response_mode || 'investigation_report'
+}
+function responseModeTitle(c) {
+  return {
+    ioc_card: 'IOC 情报摘要',
+    investigation_report: '安全研判报告',
+    incident_report: '应急处置报告',
+    checklist: '安全配置清单',
+  }[responseMode(c)] || '安全研判报告'
 }
 
 // ═══════════ 报告模式 & 事件模板辅助 (v2.5) ═══════════
@@ -798,20 +955,50 @@ function renderMarkdown(text) {
 </script>
 
 <style scoped>
-.chat-view { height: 100%; display: flex; background: var(--bg-primary); }
-.chat-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-/* 会话侧边栏 */
-.conv-sidebar { width: 220px; flex-shrink: 0; border-right: 1px solid var(--border-primary); background: var(--bg-card); display: flex; flex-direction: column; padding: 12px; gap: 10px; overflow-y: auto; }
-.new-conv-btn { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 12px; background: var(--accent); color: white; border: none; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all var(--transition-fast); flex-shrink: 0; }
-.new-conv-btn:hover { background: var(--accent-hover); }
-.conv-list { flex: 1; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
-.conv-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; cursor: pointer; color: var(--text-secondary); font-size: 12px; transition: background var(--transition-fast); }
-.conv-item:hover { background: var(--bg-elevated); }
-.conv-item.active { background: var(--accent-subtle); color: var(--accent-hover); }
-.conv-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.chat-view { height: 100%; min-height: 0; min-width: 0; display: flex; overflow: hidden; background: var(--bg-primary); }
+.chat-main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.msg-list { min-height: 0; overflow-wrap: anywhere; }
+.input-bar { flex-shrink: 0; }
+.chat-input { min-width: 0; }
+.workspace-header > div:first-child { min-width: 0; }
+.workspace-header h1 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-tools { flex-shrink: 0; }
+/* PC 会话中心：将会话操作与研判工作区明确分开。 */
+.conv-sidebar { width: 288px; flex-shrink: 0; border-right: 1px solid var(--border-primary); background: #131620; display: flex; flex-direction: column; padding: 18px 14px 14px; gap: 12px; overflow: hidden; }
+.conv-sidebar-head { display: flex; align-items: flex-end; justify-content: space-between; padding: 0 4px; }
+.conv-kicker, .workspace-kicker, .dialog-eyebrow { color: #74809a; font-size: 10px; font-weight: 700; letter-spacing: .08em; }
+.conv-sidebar h2 { margin: 4px 0 0; color: var(--text-primary); font-size: 17px; line-height: 1.2; }
+.conv-total { min-width: 22px; padding: 3px 7px; border-radius: 999px; background: #202638; color: #aab4ca; font: 600 11px var(--font-mono, monospace); text-align: center; }
+.new-conv-btn { display: flex; align-items: center; justify-content: center; gap: 7px; padding: 10px 12px; background: #2563eb; color: white; border: 1px solid #3b82f6; border-radius: 8px; font-size: 13px; font-weight: 650; cursor: pointer; transition: all var(--transition-fast); flex-shrink: 0; }
+.new-conv-btn:hover { background: #1d4ed8; box-shadow: 0 6px 16px rgba(37,99,235,.22); }
+.conv-search { display: flex; align-items: center; gap: 8px; padding: 0 10px; height: 35px; border: 1px solid var(--border-primary); border-radius: 7px; color: var(--text-muted); background: var(--bg-primary); }
+.conv-search:focus-within { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,.12); }
+.conv-search input { min-width: 0; width: 100%; border: 0; outline: 0; color: var(--text-primary); background: transparent; font-size: 12px; }
+.conv-search input::placeholder { color: var(--text-muted); }
+.template-strip { display: flex; gap: 5px; overflow: hidden; }
+.template-strip button { flex: 1; overflow: hidden; border: 1px solid #293147; border-radius: 5px; padding: 5px 3px; color: #9eabbe; background: transparent; white-space: nowrap; text-overflow: ellipsis; cursor: pointer; font-size: 10px; }
+.template-strip button:hover { color: #cbd5e1; border-color: #425374; background: #1a2130; }
+.conv-list { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 13px; overflow-y: auto; margin: 2px -4px 0; padding: 0 4px; }
+.conv-group h3 { margin: 0 0 5px 5px; color: #73809a; font-size: 10px; line-height: 1.4; font-weight: 700; letter-spacing: .06em; }
+.conv-item { position: relative; display: flex; align-items: center; gap: 5px; min-height: 54px; padding: 8px 7px 8px 10px; border: 1px solid transparent; border-radius: 8px; cursor: pointer; color: var(--text-secondary); transition: background var(--transition-fast), border-color var(--transition-fast); }
+.conv-item:hover { background: #1a1f2d; border-color: #282f43; }
+.conv-item.active { background: #18243c; border-color: #2a4c82; box-shadow: inset 2px 0 #3b82f6; }
+.conv-item-main { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.conv-title { overflow: hidden; color: var(--text-secondary); font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.conv-item.active .conv-title { color: #dbeafe; }
+.pin-mark { color: #fbbf24; margin-right: 4px; }
+.conv-meta { overflow: hidden; color: var(--text-muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.conv-actions { display: flex; flex-shrink: 0; opacity: 0; transition: opacity var(--transition-fast); }
+.conv-item:hover .conv-actions, .conv-item.active .conv-actions { opacity: 1; }
+.conv-actions button { width: 20px; height: 22px; padding: 0; border: 0; border-radius: 4px; color: #8b98b0; background: transparent; cursor: pointer; font-size: 14px; line-height: 1; }
+.conv-actions button:hover { color: #e2e8f0; background: #283248; }.conv-actions .delete-action:hover { color: #fca5a5; background: rgba(239,68,68,.12); }
 .conv-loading { color: var(--text-muted); font-size: 12px; padding: 8px; text-align: center; }
-.conv-empty { color: var(--text-muted); font-size: 12px; padding: 16px 8px; text-align: center; }
-.msg-list { flex: 1; overflow-y: auto; padding: 20px 24px; scroll-behavior: smooth; }
+.conv-empty { color: var(--text-muted); font-size: 12px; padding: 22px 8px; text-align: center; }
+.workspace-header { height: 69px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 30px; border-bottom: 1px solid var(--border-primary); background: rgba(19,22,32,.76); }
+.workspace-header h1 { margin: 3px 0 0; color: var(--text-primary); font-size: 17px; line-height: 1.2; font-weight: 650; }
+.workspace-tools { display: flex; align-items: center; gap: 8px; }.workspace-action { padding: 6px 9px; border: 1px solid #30394e; border-radius: 6px; color: #aebad0; background: transparent; cursor: pointer; font-size: 11px; transition: .18s ease; }.workspace-action:hover, .workspace-action.active { color: #dbeafe; border-color: #3869ae; background: #1b2b45; }.workspace-action:disabled { opacity: .42; cursor: not-allowed; }
+.workspace-status { display: flex; align-items: center; gap: 7px; margin-left: 4px; color: var(--text-muted); font-size: 11px; }.workspace-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--error); }.workspace-dot.connected { background: var(--success); box-shadow: 0 0 7px rgba(34,197,94,.4); }
+.msg-list { flex: 1; overflow-y: auto; padding: 24px max(32px, calc((100% - 1080px) / 2)); scroll-behavior: smooth; }
 .empty-state { text-align: center; margin-top: 80px; animation: count-up 0.5s ease; }
 .empty-icon { margin-bottom: 16px; opacity: 0.4; }
 .empty-title { font-size: 22px; font-weight: 700; color: var(--text-primary); letter-spacing: 2px; margin-bottom: 6px; }
@@ -828,6 +1015,7 @@ function renderMarkdown(text) {
 .bubble-avatar { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0; margin-top: 4px; }
 .user-avatar { background: var(--accent); color: white; order: 1; }
 .agent-avatar { background: linear-gradient(135deg, var(--color-intel), var(--color-analyst)); color: white; }
+.agent-message-content { min-width: 0; }.agent-message-heading { margin: 1px 0 5px 2px; color: #8190aa; font-size: 10px; font-weight: 700; letter-spacing: .04em; }
 .bubble-content { line-height: 1.7; font-size: 14px; position: relative; }
 .user-bubble .bubble-content { background: var(--accent-subtle); border: 1px solid rgba(220,38,38,0.2); border-radius: 16px 4px 16px 16px; padding: 10px 16px; color: var(--text-secondary); }
 .agent-bubble { justify-content: flex-start; }
@@ -960,12 +1148,12 @@ function renderMarkdown(text) {
 .cell-value { font-size: 13px; font-weight: 500; color: var(--text-secondary); }
 .msg-system { text-align: center; } .sys-text { font-size: 11px; color: var(--text-muted); opacity: 0.7; }
 /* ═══ 结构化最终结果卡片 (JSON-first, v2.4) ═══ */
-.sr-card { width: 100%; border: 1px solid var(--border-primary); border-radius: var(--radius-sm); overflow: hidden; background: var(--bg-card); }
-.sr-header { display: flex; align-items: center; gap: 6px; padding: 8px 14px; font-size: 12px; font-weight: 600; color: var(--text-secondary); background: var(--bg-elevated); border-bottom: 1px solid var(--border-primary); }
+.sr-card { width: 100%; border: 1px solid #30394b; border-radius: 10px; overflow: hidden; background: linear-gradient(135deg, rgba(26,34,52,.96), var(--bg-card) 42%); box-shadow: 0 8px 28px rgba(0,0,0,.14); }
+.sr-header { display: flex; align-items: center; gap: 6px; padding: 10px 14px; font-size: 12px; font-weight: 650; color: #d9e3f5; background: rgba(17,23,36,.72); border-bottom: 1px solid #30394b; }
 .sr-header svg { color: var(--color-analyst, var(--accent)); }
 .sr-status { margin-left: auto; font-size: 10px; font-weight: 500; color: var(--text-muted); }
-.sr-main { display: flex; align-items: baseline; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--border-primary); }
-.sr-score { font-size: 34px; font-weight: 800; line-height: 1; }
+.sr-main { display: flex; align-items: baseline; gap: 12px; padding: 16px 16px; border-bottom: 1px solid var(--border-primary); }
+.sr-score { font-size: 38px; font-weight: 800; line-height: 1; letter-spacing: -.04em; }
 .risk-score-high { color: var(--error); }
 .risk-score-mid { color: var(--warning); }
 .risk-score-low { color: var(--success); }
@@ -975,7 +1163,7 @@ function renderMarkdown(text) {
 .sr-unknown-hint { font-size: 10px; color: var(--text-muted); border: 1px dashed var(--border-primary); border-radius: 3px; padding: 1px 6px; white-space: nowrap; }
 .sr-meta { display: flex; gap: 18px; padding: 8px 14px; font-size: 11px; color: var(--text-muted); border-bottom: 1px solid var(--border-primary); }
 .sr-meta-item strong { color: var(--text-secondary); }
-.sr-summary { padding: 10px 14px; font-size: 13px; color: var(--text-secondary); border-bottom: 1px dashed var(--border-primary); line-height: 1.7; }
+.sr-summary { padding: 13px 16px; font-size: 13px; color: var(--text-secondary); border-bottom: 1px dashed var(--border-primary); line-height: 1.75; }
 .sr-agents { padding: 6px 14px 10px; }
 .sr-agent { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 12px; }
 .sr-agent-name { width: 130px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1097,7 +1285,6 @@ function renderMarkdown(text) {
 .ws-status-bar { display: flex; align-items: center; gap: 8px; padding: 4px 20px; border-top: 1px solid var(--border-primary); font-size: 11px; transition: all var(--transition-fast); }
 .ws-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; transition: background 0.3s; }
 .ws-label { color: var(--text-muted); }
-.ws-boundary { color: var(--text-muted); font-size: 10px; margin-left: auto; }
 .ws-connected .ws-dot { background: var(--success); box-shadow: 0 0 4px rgba(34,197,94,0.4); }
 .ws-connected .ws-label { color: var(--success); }
 .ws-connecting .ws-dot { background: var(--warning); animation: pulse-dot 1s infinite; }
@@ -1114,19 +1301,44 @@ function renderMarkdown(text) {
 .processing-dots span:nth-child(1) { animation-delay: -0.32s; }
 .processing-dots span:nth-child(2) { animation-delay: -0.16s; }
 @keyframes bounce { 0%,80%,100% { transform: scale(0); } 40% { transform: scale(1); } }
-.input-bar { border-top: 1px solid var(--border-primary); padding: 16px 20px; background: var(--bg-card); }
-.input-wrapper { display: flex; align-items: flex-end; gap: 10px; background: var(--bg-primary); border: 1px solid var(--border-primary); border-radius: var(--radius-md); padding: 8px 12px; transition: border-color var(--transition-fast); }
-.input-wrapper:focus-within { border-color: var(--accent); box-shadow: 0 0 0 1px rgba(220,38,38,0.15); }
+.input-bar { border-top: 1px solid var(--border-primary); padding: 14px max(32px, calc((100% - 1080px) / 2)); background: rgba(19,22,32,.92); }
+.input-wrapper { display: flex; align-items: flex-end; gap: 10px; background: #111622; border: 1px solid #30394e; border-radius: 10px; padding: 9px 12px; transition: border-color var(--transition-fast), box-shadow var(--transition-fast); }
+.input-wrapper:focus-within { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,.13); }
 .chat-input { flex: 1; background: transparent; border: none; outline: none; color: var(--text-primary); font-family: var(--font-sans); font-size: 14px; line-height: 1.5; resize: none; max-height: 120px; }
 .chat-input::placeholder { color: var(--text-muted); } .chat-input:disabled { opacity: 0.5; }
 .send-btn { width: 36px; height: 36px; border-radius: 50%; border: none; display: flex; align-items: center; justify-content: center; background: var(--bg-elevated); color: var(--text-muted); cursor: pointer; transition: all var(--transition-fast); flex-shrink: 0; }
-.send-btn.active { background: var(--accent); color: white; }
-.send-btn.active:hover { background: var(--accent-hover); box-shadow: var(--shadow-glow-red); }
+.send-btn.active { background: #2563eb; color: white; }
+.send-btn.active:hover { background: #1d4ed8; box-shadow: 0 0 0 4px rgba(37,99,235,.15); }
 .send-btn:disabled { cursor: not-allowed; opacity: 0.4; }
 .send-spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.8s linear infinite; }
-.input-hint { margin-top: 7px; color: var(--text-muted); font-size: 10px; line-height: 1.4; }
+.input-hint { display: flex; justify-content: space-between; gap: 12px; margin-top: 7px; color: var(--text-muted); font-size: 10px; line-height: 1.4; }
+
+/* 会话元数据操作使用同一组轻量弹窗，避免浏览器原生 prompt/confirm 打断工作流。 */
+.dialog-backdrop { position: fixed; z-index: 50; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(4,7,13,.68); backdrop-filter: blur(3px); }
+.conv-dialog { width: min(390px, calc(100vw - 32px)); padding: 22px; border: 1px solid #30394c; border-radius: 12px; background: #171c28; box-shadow: 0 24px 64px rgba(0,0,0,.42); }
+.conv-dialog h2 { margin: 5px 0 14px; color: var(--text-primary); font-size: 18px; }.conv-dialog p { margin: 10px 0 0; color: var(--text-muted); font-size: 12px; line-height: 1.55; }
+.conv-dialog input { box-sizing: border-box; width: 100%; padding: 10px 11px; border: 1px solid #34405a; border-radius: 7px; outline: none; color: var(--text-primary); background: #0f131c; font-size: 13px; }.conv-dialog input:focus { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,.15); }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }.dialog-actions button { border-radius: 7px; padding: 8px 12px; cursor: pointer; font-size: 12px; font-weight: 600; }.dialog-secondary { border: 1px solid #354058; color: #b5c0d4; background: transparent; }.dialog-primary { border: 1px solid #3b82f6; color: white; background: #2563eb; }.dialog-danger { border: 1px solid #dc2626; color: white; background: #b91c1c; }.dialog-primary:hover { background: #1d4ed8; }.dialog-danger:hover { background: #991b1b; }.dialog-secondary:hover { background: #242b3c; }
 
 /* ═══ 响应式 ChatView ═══ */
+@media (max-width: 1280px) {
+  .conv-sidebar { width: 248px; }
+  .workspace-header { padding-left: 22px; padding-right: 22px; }
+  .msg-list { padding-left: 22px; padding-right: 22px; }
+  .input-bar { padding-left: 22px; padding-right: 22px; }
+  .msg-bubble { max-width: 82%; }
+}
+
+@media (max-width: 1024px) {
+  .conv-sidebar { width: 220px; padding-left: 10px; padding-right: 10px; }
+  .workspace-header { padding-left: 16px; padding-right: 16px; }
+  .workspace-tools { gap: 5px; }
+  .workspace-action { padding-left: 7px; padding-right: 7px; }
+  .msg-list { padding-left: 16px; padding-right: 16px; }
+  .input-bar { padding-left: 16px; padding-right: 16px; }
+  .msg-bubble { max-width: 88%; }
+}
+
 @media (max-width: 768px) {
   .msg-list { padding: 12px !important; }
   .msg-bubble { max-width: 90% !important; }

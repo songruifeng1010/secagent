@@ -10,6 +10,9 @@
 # 正式发布到 PyPI 后
 pipx install secagentx
 
+# 也可使用 uv 管理全局 CLI
+uv tool install secagentx
+
 # 直接从仓库安装（仓库需包含已构建的 frontend/dist）
 pipx install "git+https://github.com/songruifeng1010/secagent.git"
 
@@ -49,6 +52,12 @@ git clone ssh://git@ssh.github.com:443/songruifeng1010/secagent.git
 
 普通使用者应使用 `python -m pip install .`，它会构建并安装项目；只有需要修改源代码时才使用 `python -m pip install -e .`。从 GitHub 直接安装也可使用 `pipx install "git+https://github.com/songruifeng1010/secagent.git"`，但同样依赖本机能访问 GitHub 和 Python 软件源。
 
+网络受限时，可下载已发布的 Release wheel 后本地安装：`pipx install ./secagentx-4.0.0-py3-none-any.whl`。仅有项目 wheel 时仍需联网安装依赖。
+
+完整离线包应在与目标机器相同的操作系统、CPU 架构和 Python 版本下准备。联网机器执行 `python -m pip download --only-binary=:all: -d wheelhouse ./secagentx-4.0.0-py3-none-any.whl`，复制整个 wheelhouse 后执行下面的离线脚本。目录中只保留一个 SecAgentX 版本；目标机器需先安装 Python 和 pipx。可以使用本地构建的 wheel，不以项目已发布到 PyPI 为前提。
+
+项目也提供离线安装脚本：Windows PowerShell 执行 `powershell -ExecutionPolicy Bypass -File scripts/install_offline.ps1`，Linux/macOS 执行 `bash scripts/install_offline.sh`。脚本只从本地 `wheelhouse/` 安装，不会访问 GitHub 或 PyPI。
+
 只验证本地启动链路、不调用真实模型时，可先设置 `LLM_PROVIDER=mock`。Web 控制台默认仅监听 `127.0.0.1:8000`。
 
 ## Windows CMD 源码快速开始
@@ -62,12 +71,16 @@ rem 首次选择厂商、填写 API Key，并进行真实连通验证
 secagentx onboard
 
 rem 终端多轮对话；也可直接运行项目内置的 secagentx.cmd
-secagentx
+secagentx chat
 secagentx ask "分析这条安全告警"
 
 rem 启动并自动打开 Web 控制台
 secagentx dashboard
 ```
+
+`secagentx chat` 是纯终端交互界面：Rich 实时展示执行状态与流式回答，完整日志写入文件。普通知识问答直接显示 Markdown 正文，事件研判使用报告面板。`secagentx ask "问题" --json` 保持单行 JSON 输出。
+
+使用 `/new` 新建会话、`/history` 查看会话 ID、`/resume ID` 恢复会话、`/model` 查看模型、`/export 文件.md` 导出会话（不会覆盖已有文件）。方向键 ↑/↓ 浏览本次终端输入历史，输入 `/` 后按 Tab 补全命令；输入历史只存内存，不额外写入历史文件。分析过程中按 Ctrl+C 取消并返回输入，输入时按 Ctrl+C 退出。多行输入用三反引号开始和结束，在多行模式按 Ctrl+C 会丢弃草稿而不发送。非交互管道、简易终端或旧环境未安装 `prompt-toolkit` 时自动退回普通输入。
 
 API Key 默认保存到 Windows 用户级 DPAPI 加密凭据库（安装可选 `keyring` 后也可使用系统 Keyring），不会写入项目或明文 JSON。只有 Provider 完成一次真实请求验证后才会成为活动配置。Web 控制台不需要账户、密码或令牌，且仅允许本机访问。
 
@@ -145,6 +158,44 @@ secagentx doctor --live
 ```
 
 未配置真实 LLM Key 时可显式设置 `LLM_PROVIDER=mock` 验证启动链路；此模式只用于开发，不代表真实研判能力。Windows PowerShell 使用 `$env:LLM_PROVIDER='mock'`，Linux/macOS 使用 `export LLM_PROVIDER=mock`。
+
+### GitHub 发布前检查
+
+训练数据、离线模型和本地测试产物不会随源码发布。提交或打标签前，在项目根目录执行：
+
+```bash
+python scripts/release_preflight.py
+```
+
+该检查只扫描已进入 Git 暂存区的文件，不会删除本地数据；如果误将大文件、数据集、模型或环境变量文件加入暂存区，会在推送前直接失败。
+
+### ML 模型训练与部署状态
+
+仓库提供可复现的 ML 训练流水线，但不内置数据集或预训练模型。当前提供 NSL-KDD、UNSW-NB15、CSE-CIC-IDS2018 三个适配器；数据文件布局和字段要求见 [dataset/README.md](dataset/README.md)。安装 `requirements-ml.txt` 后按数据集运行：
+
+```bash
+python scripts/retrain_model.py --algo xgboost --version v1
+python scripts/retrain_model.py --dataset unsw-nb15 --algo xgboost --version v1
+python scripts/retrain_model.py --dataset cic-ids-2018 --algo xgboost --version v1
+```
+
+CSE-CIC-IDS2018 约 820 万条记录，内存受限环境建议首次验证使用 `--max-rows 300000 --sampling stratified --no-tune --no-calibrate`；分层抽样会覆盖整个训练/测试文件，而不是只读取文件开头。该命令仍属于“受限样本”实验，生产评估应在更大内存机器上执行全量训练。
+
+训练流程严格使用各数据集准备好的训练/测试划分、保存模型与特征预处理元数据，并生成评估报告。运行时不会生成合成数据，也不会在找不到模型时自动训练；可通过 `GET /api/ml/status` 或 `GET /api/ml/models` 查看各数据集模型是否已部署。当前仓库没有附带 `.joblib` 模型文件，示例指标仅是历史基准，不能视为本环境实测结果。
+
+运行时还会执行模型质量门禁（F1≥0.50、Recall≥0.20、ROC-AUC≥0.70，训练/测试准确率差距≤0.15）。训练文件成功生成但未达到门槛的模型仍会保留在报告中供审计，不会被自动加载。
+
+### RAG 索引状态
+
+知识库原文随仓库提供，ChromaDB 向量索引需要单独构建。使用 `python scripts/data_pipeline/embed_knowledge.py --status` 查看本地索引，也可调用 `GET /api/knowledge/index/status` 获取机器可读状态；索引不可用时会降级到关键词检索。
+
+### 研判会话工作区
+
+PC 控制台将一次研判作为可恢复的本地会话管理。会话标题由首条提问自动生成，也可手动重命名；支持搜索、按时间分组、置顶、删除及导出 Markdown。删除会同时移除该会话的消息和关联执行轨迹，无法恢复。
+
+默认对话区只显示提问、AI 答复和最终研判报告，避免工具调用与 Agent 状态淹没结论。需要审计时，点击工作区右上角的“查看过程”，即可展开保留的执行时间线；最终报告可在“快速分析”和“专家报告”之间切换，并可复制或导出。
+
+回答会按场景自动选择展示形式：概念、定义和原理类问题（例如“什么是 SQLite 注入？”）直接输出纯文本，不显示风险评分框；IP、域名等 IOC 查询显示情报摘要；漏洞、攻击和告警进入安全研判报告；应急处置显示处置报告；配置、加固和合规问题显示操作清单。后端事件中的 `response_mode` 是这一展示契约，CLI/API 使用者也可据此决定自己的渲染方式。
 
 ### 搭建自己的前端
 
@@ -256,12 +307,16 @@ python3 scripts/update_threat_ips.py
 | 分类 | 端点 | 说明 |
 |------|------|------|
 | **健康** | `/api/health`, `/api/stats`, `/api/metrics` | 系统状态 |
-| **事件** | `/api/events`, `/api/events/{id}` | 安全事件 CRUD |
+| **事件** | `/api/events`, `/api/events/{id}`, `/api/events/feedback` | 安全事件、人工反馈标签与复盘数据 |
 | **MITRE** | `/api/mitre/search`, `/api/mitre/technique/{id}`, `/api/mitre/kill-chain`, `/api/mitre/attack-flow` | ATT&CK 知识库 |
 | **CVE** | `/api/cve/search`, `/api/cve/{id}`, `/api/cve/by-mitre/{tech_id}` | 漏洞库 |
 | **合规** | `/api/compliance/search`, `/api/compliance/{name}` | 法规库 |
 | **剧本** | `/api/remediation/search`, `/api/remediation/{scenario}` | 应急响应 |
 | **Agent** | `/api/agents`, `/api/agents/runtime` | 智能体运行时 |
+| **ML 状态** | `/api/ml/status`, `/api/ml/models`, `/api/ml/datasets` | 三个数据集适配器及模型的部署、算法、阈值与错误状态（只读） |
+| **RAG 索引状态** | `/api/knowledge/index/status` | ChromaDB 集合与文档数量（只读） |
+| **会话** | `GET/POST /api/conversations`, `PATCH/DELETE /api/conversations/{id}` | 搜索、创建、重命名、置顶和删除本机研判会话 |
+| **会话消息** | `GET /api/conversations/{id}/messages` | 恢复本机历史问答正文 |
 | **人工处置** | `POST /api/dispatch` | 确认、升级、忽略事件；封禁/解封必须显式传入 `confirmed: true` |
 | **联邦** | `/api/federation/status`, `/api/federation/events`, `/api/federation/blacklist` | 跨区域同步 |
 | **WebSocket** | `/ws/chat` | 实时对话 |

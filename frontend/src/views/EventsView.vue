@@ -30,6 +30,10 @@
           <option value="">全部状态</option>
           <option value="open">OPEN</option>
           <option value="investigating">INVESTIGATING</option>
+          <option value="confirmed">CONFIRMED</option>
+          <option value="escalated">ESCALATED</option>
+          <option value="blocked">BLOCKED</option>
+          <option value="ignored">IGNORED</option>
           <option value="resolved">RESOLVED</option>
         </select>
 
@@ -88,7 +92,10 @@
               </div>
             </td>
             <td class="col-status"><span class="status-tag" :class="'st-' + row.status">{{ statusLabel(row.status) }}</span></td>
-            <td class="col-risk"><span class="risk-text" :style="{ color: severityColor(row.severity) }">{{ severityEng(row.severity) }}</span></td>
+            <td class="col-risk">
+              <span class="risk-text" :style="{ color: severityColor(row.severity) }">{{ severityEng(row.severity) }}</span>
+              <span v-if="row.risk_fusion?.signals?.length" class="fusion-count" :title="`融合 ${row.risk_fusion.signals.length} 个信号`">Σ{{ row.risk_fusion.signals.length }}</span>
+            </td>
           </tr>
           <tr v-if="filteredEvents.length === 0">
             <td colspan="7" class="empty-row">暂无匹配事件</td>
@@ -130,6 +137,7 @@ async function fetchEvents() {
       events.value = data.events.map(e => ({
         ...e,
         confidence: e.confidence ?? 0,
+        risk_fusion: e.risk_fusion || {},
         techniques: e.techniques?.length ? e.techniques : [],
       }))
       loading.value = false
@@ -149,7 +157,7 @@ function primaryTech(techs) {
 
 function severityColor(s) { return { '紧急': 'var(--error)', '高危': '#f97316', '中危': 'var(--warning)', '低危': 'var(--success)' }[s] || 'var(--text-muted)' }
 function severityEng(s) { return { '紧急': 'CRITICAL', '高危': 'HIGH', '中危': 'MEDIUM', '低危': 'LOW' }[s] || (s || '').toUpperCase() }
-function statusLabel(s) { return { open: 'OPEN', investigating: 'INVESTIGATING', resolved: 'RESOLVED' }[s] || (s || '').toUpperCase() }
+function statusLabel(s) { return { open: 'OPEN', investigating: 'INVESTIGATING', confirmed: 'CONFIRMED', escalated: 'ESCALATED', blocked: 'BLOCKED', ignored: 'IGNORED', resolved: 'RESOLVED', closed: 'CLOSED' }[s] || (s || '').toUpperCase() }
 function confBarColor(c) { if (c >= 0.8) return 'var(--success)'; if (c >= 0.6) return 'var(--warning)'; return 'var(--error)' }
 function confTextColor(c) { if (c >= 0.8) return 'var(--success)'; if (c >= 0.6) return 'var(--warning)'; return 'var(--error)' }
 
@@ -219,6 +227,10 @@ onMounted(fetchEvents)
 .status-tag { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: var(--radius-full); letter-spacing: 0.5px; }
 .st-open { background: var(--error-bg); color: var(--error); }
 .st-investigating { background: var(--warning-bg); color: var(--warning); }
+.st-confirmed { background: var(--info-bg); color: var(--info); }
+.st-escalated { background: var(--warning-bg); color: var(--warning); }
+.st-blocked { background: var(--error-bg); color: var(--error); }
+.st-ignored { background: var(--bg-elevated); color: var(--text-muted); }
 .st-resolved { background: var(--success-bg); color: var(--success); }
 
 /* ─── 关联信息徽章 ─── */
@@ -230,6 +242,7 @@ onMounted(fetchEvents)
 .badge-high { background: #fff7ed; color: #c2410c; border: 1px solid #fdba74; }
 
 .risk-text { font-size: 11px; font-weight: 700; letter-spacing: 0.5px; }
+.fusion-count { margin-left: 5px; font-size: 9px; color: var(--info); border: 1px solid var(--info); border-radius: 3px; padding: 1px 3px; }
 
 .empty-row { text-align: center; padding: 40px !important; color: var(--text-muted); font-size: 13px; }
 

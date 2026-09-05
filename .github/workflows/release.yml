@@ -43,6 +43,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
+          python scripts/release_preflight.py
           python -m compileall -q backend tests scripts
           pytest -m "not slow" --timeout=60 --cov=backend --cov-report=term --cov-fail-under=60
           python scripts/quality/knowledge_health.py --strict --score
