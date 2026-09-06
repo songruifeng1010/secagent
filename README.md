@@ -1,90 +1,95 @@
-# SecAgentX · 本机安全智能体 v4.0.0
+# SecAgentX 4.0
 
-多智能体协同安全检测系统，支持 OpenAI / Anthropic 兼容协议及主流云端、本地模型，采用 **Agentic-RAG** 实现知识增强检索，并支持默认关闭、按需启用的自动威胁响应。
+> 一个可在本地运行的开源安全智能体，支持安全知识问答、事件研判、Agentic-RAG 知识检索和受控自动响应。
 
-## 安装 CLI
+SecAgentX 面向安全研究、开发测试和本地安全分析场景。它通过多个职责明确的内部 Agent 协同处理任务，结合 Agentic-RAG、本地安全知识库、威胁情报查询和风险融合能力，对安全问题、日志、告警、IP、漏洞及网络事件进行分析，并生成带有证据依据的判断和处置建议。
 
-推荐通过 Python 发行包安装；SecAgentX 的后端、预构建 Web、前端脚手架和知识库会一起进入 wheel，不需要用户再安装 Node 才能启动默认界面。
+SecAgentX 提供 Web 和 CLI 两种交互方式。普通安全知识问题直接返回简洁答案；安全事件则根据风险等级、分析证据和处置需求生成结构化研判结果。自动封禁及其他外部响应操作默认关闭，只有经过用户明确配置后才会启用。
 
-```bash
-# 正式发布到 PyPI 后
-pipx install secagentx
+## 核心能力
 
-# 也可使用 uv 管理全局 CLI
-uv tool install secagentx
+- **安全知识问答**：解释漏洞、攻击技术、安全配置和防御措施。
+- **安全事件研判**：分析告警、日志、IP、域名、文件哈希和网络行为。
+- **多 Agent 协作**：按照任务类型协调分析、情报、知识、响应等内部 Agent。
+- **Agentic-RAG**：自主选择检索策略，从本地知识库查找并组织相关证据。
+- **本地安全知识库**：内置 MITRE ATT&CK、CVE、CISA KEV、合规要求和响应剧本。
+- **风险评分与证据融合**：综合多个分析信号形成风险判断和处置建议。
+- **受控自动响应**：支持封禁、解除封禁和告警升级，默认关闭。
+- **多模型接入**：支持 OpenAI、Anthropic 兼容接口以及常见云端和本地模型。
+- **可选 ML 检测**：可训练并部署网络流量威胁检测模型，不影响核心功能运行。
 
-# 直接从仓库安装（仓库需包含已构建的 frontend/dist）
+## Agent 分工
+
+| Agent | 主要职责 |
+|---|---|
+| 分析 Agent | 识别攻击行为、提取安全特征并判断事件性质 |
+| 情报 Agent | 查询 IP、域名、漏洞和攻击组织相关情报 |
+| 知识 Agent | 从本地安全知识库检索相关证据 |
+| 告警过滤 Agent | 过滤重复、低价值或误报概率较高的告警 |
+| 响应 Agent | 生成处置建议，并执行经过明确授权的响应动作 |
+| 汇总 Agent | 汇总各 Agent 结论并生成最终回答 |
+
+各 Agent 由统一任务路由协调，职责相互独立；涉及封禁等状态变更的动作仍受审批、白名单、熔断和审计机制约束。
+
+## 快速开始
+
+需要 Python 3.10 或更高版本。仓库已经包含预构建的 Web 界面，普通用户不需要安装 Node.js。
+
+当前推荐直接从 GitHub 安装：
+
+```powershell
+python -m pip install --user pipx
+python -m pipx ensurepath
 pipx install "git+https://github.com/songruifeng1010/secagent.git"
 
 secagentx onboard
-secagentx
 secagentx dashboard
 ```
 
-`npm` 只用于开发或定制 Vue 前端；CLI/后端的权威安装入口是 `pipx`/Python wheel，避免把 Python 服务伪装成 Node 包。
+重新打开终端后运行 `secagentx onboard`，选择模型服务并完成连接验证。随后运行 `secagentx dashboard`，访问 `http://127.0.0.1:8000` 使用 Web 对话界面。
 
-## 从 GitHub 克隆并运行
+也可以克隆源码并安装：
 
-需要 Python 3.10 或更高版本。仓库已包含预构建 Web 界面，普通使用者不需要安装 Node.js。
-
-```bash
+```powershell
 git clone https://github.com/songruifeng1010/secagent.git
 cd secagent
 python -m venv .venv
-
-# Linux / macOS
-source .venv/bin/activate
-
-# Windows PowerShell 改用：.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install .
-
-# 首次配置真实模型，随后启动 Web 控制台
-secagentx onboard
-secagentx dashboard
+.venv\Scripts\python.exe -m pip install .
+.venv\Scripts\secagentx.exe onboard
+.venv\Scripts\secagentx.exe dashboard
 ```
 
-`git clone` 是 Git 与网络连接的步骤，尚未进入 SecAgentX 的构建流程。若出现 `Failed to connect to github.com:443`，请先检查网络、代理或防火墙；已在 GitHub 账户配置 SSH Key 的用户可改用 GitHub 的 443 SSH 入口：
+Linux 和 macOS 将 `.venv\Scripts\python.exe`、`.venv\Scripts\secagentx.exe` 分别替换为 `.venv/bin/python`、`.venv/bin/secagentx`。
+
+网络无法连接 GitHub 22 端口时，已配置 GitHub SSH Key 的用户可以通过 SSH 443 克隆：
 
 ```bash
 git clone ssh://git@ssh.github.com:443/songruifeng1010/secagent.git
 ```
 
-普通使用者应使用 `python -m pip install .`，它会构建并安装项目；只有需要修改源代码时才使用 `python -m pip install -e .`。从 GitHub 直接安装也可使用 `pipx install "git+https://github.com/songruifeng1010/secagent.git"`，但同样依赖本机能访问 GitHub 和 Python 软件源。
+网络受限环境还可以下载 Release wheel，或使用项目提供的 `scripts/install_offline.ps1`、`scripts/install_offline.sh` 和完整 `wheelhouse/` 离线安装。
 
-网络受限时，可下载已发布的 Release wheel 后本地安装：`pipx install ./secagentx-4.0.0-py3-none-any.whl`。仅有项目 wheel 时仍需联网安装依赖。
+## 使用方式
 
-完整离线包应在与目标机器相同的操作系统、CPU 架构和 Python 版本下准备。联网机器执行 `python -m pip download --only-binary=:all: -d wheelhouse ./secagentx-4.0.0-py3-none-any.whl`，复制整个 wheelhouse 后执行下面的离线脚本。目录中只保留一个 SecAgentX 版本；目标机器需先安装 Python 和 pipx。可以使用本地构建的 wheel，不以项目已发布到 PyPI 为前提。
-
-项目也提供离线安装脚本：Windows PowerShell 执行 `powershell -ExecutionPolicy Bypass -File scripts/install_offline.ps1`，Linux/macOS 执行 `bash scripts/install_offline.sh`。脚本只从本地 `wheelhouse/` 安装，不会访问 GitHub 或 PyPI。
-
-只验证本地启动链路、不调用真实模型时，可先设置 `LLM_PROVIDER=mock`。Web 控制台默认仅监听 `127.0.0.1:8000`。
-
-## Windows CMD 源码快速开始
-
-```bat
-cd /d C:\path\to\secagent
-py -3 -m venv .venv
-.venv\Scripts\python.exe -m pip install .
-
-rem 首次选择厂商、填写 API Key，并进行真实连通验证
-secagentx onboard
-
-rem 终端多轮对话；也可直接运行项目内置的 secagentx.cmd
+```powershell
+# 终端多轮对话
 secagentx chat
-secagentx ask "分析这条安全告警"
 
-rem 启动并自动打开 Web 控制台
+# 直接提出安全问题
+secagentx ask "什么是 SQL 注入？"
+
+# 分析安全事件
+secagentx ask "分析来自 45.33.32.156 的多次 SSH 登录失败"
+
+# 启动 Web 对话界面
 secagentx dashboard
 ```
 
-`secagentx chat` 是纯终端交互界面：Rich 实时展示执行状态与流式回答，完整日志写入文件。普通知识问答直接显示 Markdown 正文，事件研判使用报告面板。`secagentx ask "问题" --json` 保持单行 JSON 输出。
+`secagentx chat` 支持 `/new`、`/history`、`/resume`、`/model` 和 `/export` 等会话命令。普通知识问答直接显示 Markdown 正文，事件研判使用结构化报告；自动化脚本可通过 `secagentx ask "问题" --json` 获取机器可读结果。
 
-使用 `/new` 新建会话、`/history` 查看会话 ID、`/resume ID` 恢复会话、`/model` 查看模型、`/export 文件.md` 导出会话（不会覆盖已有文件）。方向键 ↑/↓ 浏览本次终端输入历史，输入 `/` 后按 Tab 补全命令；输入历史只存内存，不额外写入历史文件。分析过程中按 Ctrl+C 取消并返回输入，输入时按 Ctrl+C 退出。多行输入用三反引号开始和结束，在多行模式按 Ctrl+C 会丢弃草稿而不发送。非交互管道、简易终端或旧环境未安装 `prompt-toolkit` 时自动退回普通输入。
+API Key 默认保存到 Windows 用户级 DPAPI 加密凭据库；安装可选 `keyring` 后也可以使用系统 Keyring。凭据不会写入项目或明文 JSON，只有通过真实连接验证的 Provider 才会成为活动配置。
 
-API Key 默认保存到 Windows 用户级 DPAPI 加密凭据库（安装可选 `keyring` 后也可使用系统 Keyring），不会写入项目或明文 JSON。只有 Provider 完成一次真实请求验证后才会成为活动配置。Web 控制台不需要账户、密码或令牌，且仅允许本机访问。
-
-内置预设包括 DeepSeek、通义千问、OpenAI、Anthropic、Azure OpenAI、Gemini、OpenRouter、xAI、Kimi、Ollama 和 LM Studio；其他厂商可选择“自定义 OpenAI/Anthropic 兼容接口”，填写 API Base 与模型 ID。运行 `secagentx providers` 查看档案，`secagentx providers --use PROFILE_ID` 切换。
+内置模型预设包括 DeepSeek、通义千问、OpenAI、Anthropic、Azure OpenAI、Gemini、OpenRouter、xAI、Kimi、Ollama 和 LM Studio。其他服务可以使用自定义 OpenAI 或 Anthropic 兼容接口。
 
 ---
 
@@ -262,7 +267,7 @@ cd frontend && npm test && npm run build
 
 ---
 
-## 核心能力
+## 能力与集成明细
 
 | 能力 | 描述 |
 |------|------|
