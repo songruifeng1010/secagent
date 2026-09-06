@@ -42,6 +42,27 @@ def test_noninteractive_onboarding_requires_explicit_risk_acceptance(tmp_path, m
     assert not (tmp_path / "home" / "providers.json").exists()
 
 
+def test_interactive_profile_reads_hidden_api_key(monkeypatch):
+    """交互配置必须能够通过 getpass 安全读取未设置在环境中的 API Key。"""
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    answers = iter(["", ""])
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
+    monkeypatch.setattr(cli_app.getpass, "getpass", lambda _prompt: "test-secret")
+    args = argparse.Namespace(
+        api_base="", model="", api_key_env="", non_interactive=False,
+        profile="default", timeout=60.0,
+    )
+
+    profile, secret = cli_app._profile_from_answers(
+        "deepseek", dict(cli_app.PROVIDER_PRESETS["deepseek"]), args,
+    )
+
+    assert profile.api_base == "https://api.deepseek.com/v1"
+    assert profile.model == "deepseek-chat"
+    assert profile.credential_type == "keyring"
+    assert secret == "test-secret"
+
+
 def test_ui_init_creates_clean_template(tmp_path):
     target = tmp_path / "custom-ui"
     assert cli_app.main(["ui", "init", str(target)]) == 0

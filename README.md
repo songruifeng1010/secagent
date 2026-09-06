@@ -41,12 +41,21 @@ SecAgentX 提供 Web 和 CLI 两种交互方式。普通安全知识问题直接
 python -m pip install --user pipx
 python -m pipx ensurepath
 pipx install "git+https://github.com/songruifeng1010/secagent.git"
+```
 
+首次安装 `pipx` 后需要关闭并重新打开终端。随后单独运行首次配置命令，不要将下一条启动命令同时粘贴到交互提示中：
+
+```powershell
 secagentx onboard
+```
+
+按照提示完成模型连接验证，看到“配置完成”后再启动 Web 对话界面：
+
+```powershell
 secagentx dashboard
 ```
 
-重新打开终端后运行 `secagentx onboard`，选择模型服务并完成连接验证。随后运行 `secagentx dashboard`，访问 `http://127.0.0.1:8000` 使用 Web 对话界面。
+默认访问地址为 `http://127.0.0.1:8000`。
 
 也可以克隆源码并安装：
 
