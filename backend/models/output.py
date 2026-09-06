@@ -579,11 +579,13 @@ _ANSWER_MODE_DOMAIN_RE = re.compile(
 # 面向用户的展示模式。answer_mode 是内部路由（free/rag/analysis），
 # response_mode 是前端展示契约，二者刻意分离，避免把知识检索误渲染成事件报告。
 RESPONSE_MODES = {
-    "plain_text",             # 概念、定义、原理、普通问答
+    "plain_text",             # 问候、确认和一般闲聊
+    "knowledge_card",         # 概念、定义、原理和安全知识解释
     "ioc_card",               # IP/域名/哈希等 IOC 查询
     "investigation_report",   # 告警、攻击、漏洞和综合研判
     "incident_report",        # 应急响应和处置任务
-    "checklist",              # 配置、加固、合规和操作清单
+    "action_guide",           # 配置、加固、合规和操作清单
+    "checklist",              # 旧版操作清单兼容值
 }
 _KNOWLEDGE_QUESTION_MARKERS = (
     "什么是", "什么叫", "是什么", "概念", "含义", "原理", "介绍",
@@ -596,10 +598,12 @@ _ACTION_QUERY_MARKERS = (
 
 
 def is_plain_knowledge_query(text: str, template_type: str = "", answer_mode: str = "") -> bool:
-    """判断是否应以无卡片的纯文本回答。
+    """判断是否为适合知识卡片的定义/原理型问题。
 
     这条规则覆盖 LLM 分类器偶尔把“什么是 SQL 注入”标成攻击检测的情况，
-    但会避开“如何防御/检测/分析”这类需要行动建议的安全任务。
+    但会避开“如何防御/检测/分析”这类需要操作指南或研判报告的任务。
+
+    函数名为兼容既有调用暂时保留；返回 True 不再表示前端必须使用纯文本。
     """
     query = (text or "").strip().lower()
     if not query:
@@ -623,7 +627,7 @@ def select_response_mode(
 ) -> str:
     """根据意图和问题场景选择前端展示契约。"""
     if is_plain_knowledge_query(text, template_type, answer_mode):
-        return "plain_text"
+        return "knowledge_card"
     if template_type == "威胁情报":
         return "ioc_card"
     # 需要人工复核是状态，不等同于应急处置场景；例如漏洞报告证据不足时
@@ -631,7 +635,7 @@ def select_response_mode(
     if template_type == "应急响应":
         return "incident_report"
     if template_type == "安全配置":
-        return "checklist"
+        return "action_guide"
     return "investigation_report"
 
 

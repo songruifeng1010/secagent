@@ -123,6 +123,8 @@ class TestKnowledgeBranchRAG:
         assert len(complete) == 1
         sr = complete[0]["structured_result"]
         assert sr["is_knowledge"] is True
+        assert sr["response_mode"] == "knowledge_card"
+        assert sr["question"] == "什么是SQLite"
         assert sr["score"] is None
         assert sr["rag"]["used"] is True
         assert len(sr["rag"]["sources"]) == 1

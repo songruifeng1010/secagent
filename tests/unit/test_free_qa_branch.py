@@ -123,6 +123,7 @@ class TestFreeQABranch:
         assert len(complete) == 1
         ev = complete[0]
         assert ev.get("answer_mode") == "free"
+        assert ev.get("response_mode") == "plain_text"
         assert ev.get("structured_result") is None
         assert "SQLite" in ev.get("content", "")
         # 不出现 true_react_think_content（避免被收进过程时间线）

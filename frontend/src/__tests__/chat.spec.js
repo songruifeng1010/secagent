@@ -95,21 +95,23 @@ describe('ChatStore', () => {
     expect(card.content.agent_results.length).toBe(1)
   })
 
-  it('should keep plain_text responses as an agent message even with backend metadata', () => {
+  it('should promote streamed knowledge responses into one knowledge card', () => {
     store.handleMessage({ type: 'orchestrator_start' })
+    store.handleMessage({ type: 'stream', agent_id: 'orch-001', content: 'SQLite 注入是针对 SQLite 查询拼接的注入风险。' })
     store.handleMessage({
       type: 'true_react_complete',
-      response_mode: 'plain_text',
+      response_mode: 'knowledge_card',
       answer_mode: 'rag',
       content: 'SQLite 注入是针对 SQLite 查询拼接的注入风险。',
       structured_result: {
-        response_mode: 'plain_text',
+        response_mode: 'knowledge_card',
+        question: '什么是 SQLite 注入',
         summary_text: 'SQLite 注入是针对 SQLite 查询拼接的注入风险。',
       },
     })
-    expect(store.messages.filter(m => m.role === 'agent')).toHaveLength(1)
-    expect(store.messages.find(m => m.role === 'agent').content).toContain('SQLite 注入')
-    expect(store.messages.find(m => m.role === 'structured_result')).toBeFalsy()
+    expect(store.messages.filter(m => m.role === 'agent')).toHaveLength(0)
+    expect(store.messages.filter(m => m.role === 'structured_result')).toHaveLength(1)
+    expect(store.messages.find(m => m.role === 'structured_result').content.response_mode).toBe('knowledge_card')
   })
 
   it('should preserve decision_path in structured_result (v2.4 fusion)', () => {

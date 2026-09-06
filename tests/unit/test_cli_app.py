@@ -99,3 +99,13 @@ def test_environment_provider_is_visible_to_operations_commands(monkeypatch):
     assert profile.protocol == "mock"
     assert profile.model == "mock-llm"
     assert secret == "local-no-key"
+
+
+def test_tui_command_parser_supports_history_and_classic_fallback():
+    args = cli_app.build_parser().parse_args(["tui", "--conv", "cli-existing"])
+    assert args.command == "tui"
+    assert args.conversation_id == "cli-existing"
+    assert args.classic is False
+
+    classic = cli_app.build_parser().parse_args(["tui", "--classic"])
+    assert classic.classic is True

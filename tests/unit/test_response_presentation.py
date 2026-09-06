@@ -9,14 +9,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from backend.models.output import is_plain_knowledge_query, select_response_mode
 
 
-def test_definition_question_is_plain_text_even_when_security_term_is_present():
+def test_definition_question_uses_knowledge_card_even_when_security_term_is_present():
     assert is_plain_knowledge_query("什么是 SQLite 注入", "攻击检测", "analysis")
-    assert select_response_mode("攻击检测", "什么是 SQLite 注入", answer_mode="analysis") == "plain_text"
+    assert select_response_mode("攻击检测", "什么是 SQLite 注入", answer_mode="analysis") == "knowledge_card"
 
 
 def test_actionable_security_questions_keep_structured_presentation():
     assert not is_plain_knowledge_query("如何防御 SQL 注入", "安全配置", "rag")
-    assert select_response_mode("安全配置", "如何防御 SQL 注入", answer_mode="analysis") == "checklist"
+    assert select_response_mode("安全配置", "如何防御 SQL 注入", answer_mode="analysis") == "action_guide"
 
 
 def test_scene_modes_are_stable():

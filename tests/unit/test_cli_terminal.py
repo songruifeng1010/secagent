@@ -42,6 +42,18 @@ class TerminalTests(unittest.IsolatedAsyncioTestCase):
         result = await self.consume({"type": "error", "error": "provider unavailable"})
         self.assertIn("provider unavailable", result[1])
 
+    async def test_fullscreen_event_handler_receives_stream_events(self):
+        observed = []
+        self.cli.event_handler = observed.append
+        self.cli.render_enabled = False
+        result = await self.consume(
+            {"type": "stream", "content": "answer"},
+            {"type": "true_react_complete", "content": "answer"},
+        )
+        self.assertEqual([item["type"] for item in observed], ["stream", "true_react_complete"])
+        self.assertEqual(result[1], "answer")
+        self.cli._render_answer.assert_not_called()
+
     async def test_json_does_not_render(self):
         await self.consume({"type": "true_react_complete", "content": "answer"}, json_mode=True)
         self.cli._render_answer.assert_not_called()

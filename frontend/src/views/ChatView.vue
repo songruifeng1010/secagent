@@ -54,7 +54,7 @@
       <div><span class="workspace-kicker">ANALYSIS WORKSPACE</span><h1>{{ workspaceTitle }}</h1></div>
       <div class="workspace-tools">
         <button class="workspace-action" type="button" :disabled="chatStore.messages.length === 0" @click="exportCurrentConversation">导出 Markdown</button>
-        <button class="workspace-action" type="button" :class="{ active: showProcessDetails }" @click="showProcessDetails = !showProcessDetails">{{ showProcessDetails ? '收起过程' : '查看过程' }}</button>
+        <button class="workspace-action" type="button" :disabled="processMessages.length === 0" @click="processDrawerOpen = true">查看过程</button>
         <div class="workspace-status"><span :class="['workspace-dot', wsStatus]" />{{ chatStore.isProcessing ? `正在协同 ${processingAgentCount} 个 Agent` : wsStatusText }}</div>
       </div>
     </header>
@@ -103,7 +103,7 @@
         <!-- 用户消息 -->
         <div v-if="msg.role === 'user'" class="msg-user">
           <div class="msg-bubble user-bubble">
-            <div class="bubble-avatar user-avatar">{{ userInitial }}</div>
+            <div class="message-author user-author">你</div>
             <div class="bubble-content" v-html="renderMarkdown(msg.content)" />
           </div>
         </div>
@@ -111,8 +111,10 @@
         <!-- Agent消息 -->
         <div v-else-if="msg.role === 'agent'" class="msg-agent">
           <div class="msg-bubble agent-bubble">
-            <div class="bubble-avatar agent-avatar">AI</div>
-            <div class="agent-message-content"><div class="agent-message-heading">SecAgentX · 研判答复</div><div class="bubble-content agent-text" v-html="renderMarkdown(msg.content)" /></div>
+            <div class="agent-mark" aria-hidden="true">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+            </div>
+            <div class="agent-message-content"><div class="agent-message-heading">SecAgentX</div><div class="bubble-content agent-text" v-html="renderMarkdown(msg.content)" /></div>
           </div>
         </div>
 
@@ -278,7 +280,24 @@
 
         <!-- 结构化最终结果卡片 (v2.5: 安全事件分析 / 核心发现 / 推荐动作 / 详细分析折叠 / 报告模式 / 事件模板) -->
         <div v-else-if="msg.role === 'structured_result'" class="msg-agent">
-          <div class="sr-card" :class="['tpl-' + srTemplateType(msg.content), 'mode-' + responseMode(msg.content)]">
+          <article v-if="responseMode(msg.content) === 'knowledge_card'" class="knowledge-card">
+            <header class="knowledge-header">
+              <span class="knowledge-icon" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+              </span>
+              <div class="knowledge-heading">
+                <span class="knowledge-eyebrow">SECAGENTX · 安全知识</span>
+                <h2>{{ knowledgeCardTitle(msg.content) }}</h2>
+              </div>
+              <span class="knowledge-grounding">{{ knowledgeGroundingLabel(msg.content) }}</span>
+            </header>
+            <div class="knowledge-body" v-html="renderMarkdown(msg.content.summary_text)" />
+            <footer v-if="knowledgeSources(msg.content).length" class="knowledge-sources">
+              <span class="knowledge-sources-label">参考依据</span>
+              <span v-for="(source, index) in knowledgeSources(msg.content)" :key="index" class="knowledge-source">{{ source }}</span>
+            </footer>
+          </article>
+          <div v-else class="sr-card" :class="['tpl-' + srTemplateType(msg.content), 'mode-' + responseMode(msg.content)]">
             <!-- 头部：按场景命名，避免把 IOC/配置任务都称作泛化研判报告 -->
             <div class="sr-header">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
@@ -367,14 +386,11 @@
               </table>
             </div>
 
-            <!-- 详细分析（折叠，点击后显示） -->
-            <details class="sr-detail" :open="reportMode(msg.id) === 'expert'">
-              <summary class="sr-detail-summary">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-                详细分析
-              </summary>
+            <!-- 主要结论始终可见，不使用会推动页面布局的折叠容器。 -->
+            <section v-if="srDetail(msg.content) && srDetail(msg.content) !== srRiskSummary(msg.content)" class="sr-detail-static">
+              <div class="sr-section-title">详细分析</div>
               <div class="sr-detail-body" v-html="renderMarkdown(srDetail(msg.content))" />
-            </details>
+            </section>
 
             <!-- 专家报告模式：额外明细 -->
             <template v-if="reportMode(msg.id) === 'expert'">
@@ -539,6 +555,13 @@
         </button>
       </div>
 
+      <button v-if="processMessages.length" type="button" class="process-summary" @click="processDrawerOpen = true">
+        <span class="process-summary-dot">✓</span>
+        <span>本轮执行过程已记录</span>
+        <span class="process-summary-meta">{{ processOperationCount }} 项记录</span>
+        <span class="process-summary-action">查看过程</span>
+      </button>
+
       <!-- 处理中指示 -->
       <div v-if="chatStore.isProcessing" class="processing-bar">
         <div class="processing-dots"><span /><span /><span /></div>
@@ -579,6 +602,30 @@
       <div class="input-hint"><span>Enter 发送 · Shift + Enter 换行</span><span>分析结果仅供辅助研判；处置前请人工确认。</span></div>
     </div>
     </div><!-- /chat-main -->
+    <div v-if="processDrawerOpen" class="process-drawer-backdrop" @click.self="processDrawerOpen = false">
+      <aside class="process-drawer" aria-label="Agent 执行过程">
+        <header class="process-drawer-header">
+          <div><span class="dialog-eyebrow">EXECUTION TRACE</span><h2>Agent 执行过程</h2></div>
+          <button type="button" aria-label="关闭执行过程" @click="processDrawerOpen = false">×</button>
+        </header>
+        <div class="process-drawer-body">
+          <div v-if="processMessages.length === 0" class="process-empty">当前会话暂无执行记录。</div>
+          <section v-for="message in processMessages" :key="message.id" class="process-entry">
+            <div class="process-entry-head"><span>{{ processMessageTitle(message) }}</span><span>{{ formatMessageTime(message.timestamp) }}</span></div>
+            <template v-if="message.role === 'trace_panel'">
+              <div v-for="round in (message.content?.rounds || [])" :key="round.round" class="drawer-round">
+                <div class="drawer-round-title">第 {{ round.round }} 轮</div>
+                <div v-for="(item, index) in (round.items || [])" :key="index" class="drawer-trace-item">
+                  <span class="t-badge">{{ traceBadge(item) }}</span>
+                  <span>{{ processTraceText(item) }}</span>
+                </div>
+              </div>
+            </template>
+            <div v-else class="process-entry-content" v-html="renderMarkdown(processMessageText(message))" />
+          </section>
+        </div>
+      </aside>
+    </div>
     <div v-if="renameTarget" class="dialog-backdrop" @click.self="renameTarget = null">
       <form class="conv-dialog" @submit.prevent="saveRename">
         <span class="dialog-eyebrow">会话管理</span><h2>重命名研判</h2>
@@ -598,7 +645,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, nextTick, watch, onMounted } from 'vue'
+import { ref, reactive, computed, nextTick, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useChatStore } from '../stores/chat.js'
 import { marked } from 'marked'
 
@@ -617,7 +664,7 @@ const historySearch = ref('')
 const renameTarget = ref(null)
 const renameDraft = ref('')
 const deleteTarget = ref(null)
-const showProcessDetails = ref(false)
+const processDrawerOpen = ref(false)
 
 // ─── 会话管理（新建 / 恢复历史） ───
 async function handleNewConversation() {
@@ -680,14 +727,17 @@ function formatConversationTime(value) {
   return time.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })
 }
 
+function handleGlobalKeydown(event) {
+  if (event.key === 'Escape' && processDrawerOpen.value) processDrawerOpen.value = false
+}
+
 // 挂载时加载历史会话列表
 onMounted(() => {
   chatStore.fetchConversations()
+  window.addEventListener('keydown', handleGlobalKeydown)
 })
+onBeforeUnmount(() => window.removeEventListener('keydown', handleGlobalKeydown))
 watch(historySearch, (value) => { chatStore.fetchConversations(value) })
-
-// 本机控制台不维护账户资料；使用固定标识，避免遗留旧登录态。
-const userInitial = '本'
 
 // ─── 连接状态（来自 store 的统一 WebSocket） ───
 const wsStatus = computed(() =>
@@ -702,10 +752,44 @@ const processingAgentCount = computed(() => Object.values(chatStore.activeAgents
 // 默认把机器执行细节从对话正文中收起；它们仍会完整保留在“查看过程”和执行时间线中。
 const processRoles = new Set([
   'analysis_result', 'agent_status_card', 'reasoning_chain', 'reasoner_complete',
-  'cot_start', 'cot_step', 'cot_complete', 'confidence_card', 'risk_card',
+  'agent_start', 'cot_start', 'cot_step', 'cot_complete', 'confidence_card', 'risk_card',
+  'trace_panel',
 ])
 function shouldShowMessage(message) {
-  return showProcessDetails.value || !processRoles.has(message.role)
+  return !processRoles.has(message.role)
+}
+const processMessages = computed(() => chatStore.messages.filter(message => processRoles.has(message.role)))
+const processOperationCount = computed(() => processMessages.value.reduce((total, message) => (
+  total + (message.role === 'trace_panel' ? traceCount(message.content) : 1)
+), 0))
+
+function processMessageTitle(message) {
+  return {
+    analysis_result: '意图与风险识别', agent_status_card: message.content?.agentName || 'Agent 状态',
+    agent_start: `${message.agentName || 'Agent'} 启动`, reasoning_chain: '推理步骤',
+    reasoner_complete: '证据融合', cot_start: '分析开始', cot_step: '分析步骤',
+    cot_complete: '分析结论', confidence_card: '置信度聚合', risk_card: '风险评分',
+    trace_panel: '工具与路由轨迹',
+  }[message.role] || '执行记录'
+}
+function processMessageText(message) {
+  if (typeof message.content === 'string') return message.content
+  const content = message.content || {}
+  if (message.role === 'agent_status_card') return `${content.status || 'Pending'}${content.durationMs ? ` · ${content.durationMs.toFixed(0)}ms` : ''}`
+  if (message.role === 'analysis_result') return `意图：${content.intent || '—'} · 风险：${content.severity || '—'} · 来源：${content.source || '—'}`
+  return content.content || content.summary || content.summarized || JSON.stringify(content, null, 2)
+}
+function processTraceText(item) {
+  if (item.text) return item.text
+  if (item.type === 'tool_call') return `调用工具 ${item.tool || '—'}`
+  if (item.type === 'tool_result') return `${item.success ? '完成' : '失败'}：${item.tool || '—'}${item.preview ? ` · ${item.preview}` : ''}`
+  if (item.type === 'agent_dispatch') return `分配给 ${item.agentId || 'Agent'}：${item.task || ''}`
+  if (item.type === 'agent_result') return `${item.agentId || 'Agent'} 完成${item.verdict ? ` · ${item.verdict}` : ''}`
+  return traceBadge(item)
+}
+function formatMessageTime(value) {
+  const time = new Date(value || 0)
+  return Number.isNaN(time.getTime()) ? '' : time.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
 }
 
 // ─── 发送消息（委托给 store 的统一 WebSocket） ───
@@ -850,11 +934,31 @@ function responseMode(c) {
 }
 function responseModeTitle(c) {
   return {
+    knowledge_card: '安全知识解答',
     ioc_card: 'IOC 情报摘要',
     investigation_report: '安全研判报告',
     incident_report: '应急处置报告',
+    action_guide: '安全操作指南',
     checklist: '安全配置清单',
   }[responseMode(c)] || '安全研判报告'
+}
+
+function knowledgeCardTitle(content) {
+  const question = String(content?.question || '').trim().replace(/[？?。.]$/, '')
+  const title = question.replace(/^(请问|请解释一下|请解释|解释一下|解释|什么是|什么叫|介绍一下|介绍)\s*/i, '')
+  return title || '安全知识解答'
+}
+function knowledgeGroundingLabel(content) {
+  if (content?.rag?.has_grounding) return '知识库依据'
+  if (content?.rag?.used) return '知识库检索'
+  return '安全知识'
+}
+function knowledgeSources(content) {
+  const sources = content?.rag?.sources || []
+  return sources.slice(0, 4).map((source) => {
+    if (typeof source === 'string') return source
+    return source.title || source.name || source.source || source.id || source.url || '知识库条目'
+  })
 }
 
 // ═══════════ 报告模式 & 事件模板辅助 (v2.5) ═══════════
@@ -1011,15 +1115,15 @@ function renderMarkdown(text) {
 .msg-item:hover .copy-message-btn, .copy-message-btn:focus-visible { opacity: 1; }
 .copy-message-btn:hover, .copy-message-btn.copied { color: var(--success); border-color: var(--success); }
 .msg-user { display: flex; justify-content: flex-end; }
-.msg-bubble { display: flex; gap: 10px; max-width: 75%; }
-.bubble-avatar { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0; margin-top: 4px; }
-.user-avatar { background: var(--accent); color: white; order: 1; }
-.agent-avatar { background: linear-gradient(135deg, var(--color-intel), var(--color-analyst)); color: white; }
-.agent-message-content { min-width: 0; }.agent-message-heading { margin: 1px 0 5px 2px; color: #8190aa; font-size: 10px; font-weight: 700; letter-spacing: .04em; }
+.msg-bubble { display: flex; gap: 10px; max-width: 78%; }
+.message-author { flex-shrink: 0; margin-top: 7px; color: #8491a8; font-size: 11px; font-weight: 650; }
+.user-author { order: 1; margin-left: 1px; }
+.agent-mark { width: 26px; height: 26px; margin-top: 2px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; border: 1px solid #34445e; border-radius: 7px; color: #8bbcff; background: #172238; }
+.agent-message-content { min-width: 0; }.agent-message-heading { margin: 1px 0 5px 1px; color: #8d9ab0; font-size: 11px; font-weight: 650; letter-spacing: .025em; }
 .bubble-content { line-height: 1.7; font-size: 14px; position: relative; }
-.user-bubble .bubble-content { background: var(--accent-subtle); border: 1px solid rgba(220,38,38,0.2); border-radius: 16px 4px 16px 16px; padding: 10px 16px; color: var(--text-secondary); }
+.user-bubble .bubble-content { background: #1b2230; border: 1px solid #2d374a; border-radius: 10px; padding: 10px 14px; color: var(--text-secondary); }
 .agent-bubble { justify-content: flex-start; }
-.agent-bubble .bubble-content { background: var(--bg-card); border: 1px solid var(--border-primary); border-radius: 4px 16px 16px 16px; padding: 10px 16px; color: var(--text-secondary); }
+.agent-bubble .bubble-content { padding: 1px 2px 8px; color: var(--text-secondary); }
 :deep(.md-h3) { margin: 16px 0 6px; color: var(--text-primary); font-size: 15px; font-weight: 600; }
 :deep(.md-h4) { margin: 12px 0 4px; color: var(--text-primary); font-size: 14px; font-weight: 600; }
 :deep(.md-bold) { color: var(--warning); font-weight: 600; }
@@ -1148,6 +1252,13 @@ function renderMarkdown(text) {
 .cell-value { font-size: 13px; font-weight: 500; color: var(--text-secondary); }
 .msg-system { text-align: center; } .sys-text { font-size: 11px; color: var(--text-muted); opacity: 0.7; }
 /* ═══ 结构化最终结果卡片 (JSON-first, v2.4) ═══ */
+.knowledge-card { width: 100%; overflow: hidden; border: 1px solid #303b50; border-radius: 11px; background: linear-gradient(145deg, rgba(24,32,48,.98), rgba(20,24,35,.98)); box-shadow: 0 10px 32px rgba(0,0,0,.16); }
+.knowledge-header { display: flex; align-items: center; gap: 11px; padding: 14px 17px; border-bottom: 1px solid #303b50; background: rgba(17,23,35,.62); }
+.knowledge-icon { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; border: 1px solid rgba(96,165,250,.32); border-radius: 8px; color: #8bbcff; background: rgba(59,130,246,.12); }
+.knowledge-heading { min-width: 0; flex: 1; }.knowledge-eyebrow { display: block; margin-bottom: 3px; color: #7487a5; font-size: 9px; font-weight: 750; letter-spacing: .09em; }.knowledge-heading h2 { overflow: hidden; margin: 0; color: #e5edf9; font-size: 16px; font-weight: 680; text-overflow: ellipsis; white-space: nowrap; }
+.knowledge-grounding { flex-shrink: 0; padding: 3px 8px; border: 1px solid #34445f; border-radius: 999px; color: #99a9bf; background: #182135; font-size: 10px; }
+.knowledge-body { padding: 16px 18px 18px; color: #cbd5e1; font-size: 13px; line-height: 1.78; }.knowledge-body :deep(p:first-child) { margin-top: 0; }.knowledge-body :deep(p:last-child) { margin-bottom: 0; }.knowledge-body :deep(h2), .knowledge-body :deep(h3) { margin: 18px 0 7px; color: #e5edf9; font-size: 14px; }.knowledge-body :deep(ul), .knowledge-body :deep(ol) { padding-left: 21px; }
+.knowledge-sources { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 10px 17px; border-top: 1px solid #293348; background: rgba(12,17,27,.34); }.knowledge-sources-label { margin-right: 2px; color: #78869c; font-size: 10px; font-weight: 650; }.knowledge-source { max-width: 220px; overflow: hidden; padding: 2px 7px; border-radius: 4px; color: #9caac0; background: #202a3c; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .sr-card { width: 100%; border: 1px solid #30394b; border-radius: 10px; overflow: hidden; background: linear-gradient(135deg, rgba(26,34,52,.96), var(--bg-card) 42%); box-shadow: 0 8px 28px rgba(0,0,0,.14); }
 .sr-header { display: flex; align-items: center; gap: 6px; padding: 10px 14px; font-size: 12px; font-weight: 650; color: #d9e3f5; background: rgba(17,23,36,.72); border-bottom: 1px solid #30394b; }
 .sr-header svg { color: var(--color-analyst, var(--accent)); }
@@ -1215,12 +1326,8 @@ function renderMarkdown(text) {
 .sr-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 4px; }
 .sr-table th { text-align: left; color: var(--text-muted); padding: 4px 8px; border-bottom: 1px solid var(--border-primary); white-space: nowrap; }
 .sr-table td { padding: 4px 8px; border-bottom: 1px solid var(--bg-elevated); color: var(--text-secondary); }
-.sr-detail { border-bottom: 1px dashed var(--border-primary); }
-.sr-detail-summary { display: flex; align-items: center; gap: 6px; padding: 8px 14px; font-size: 12px; font-weight: 600; color: var(--text-secondary); cursor: pointer; user-select: none; list-style: none; }
-.sr-detail-summary::-webkit-details-marker { display: none; }
-.sr-detail-summary svg { transition: transform 0.2s; color: var(--text-muted); }
-.sr-detail[open] .sr-detail-summary svg { transform: rotate(90deg); }
-.sr-detail-body { padding: 0 14px 12px; font-size: 13px; line-height: 1.7; color: var(--text-secondary); }
+.sr-detail-static { padding: 10px 14px 13px; border-bottom: 1px dashed var(--border-primary); }
+.sr-detail-body { font-size: 13px; line-height: 1.7; color: var(--text-secondary); }
 .sr-agent-summary { flex: 1; font-size: 11px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sr-full { padding: 8px 14px 12px; border-top: 1px dashed var(--border-primary); }
 .sr-full-body { font-size: 12px; line-height: 1.6; color: var(--text-secondary); }
@@ -1296,6 +1403,7 @@ function renderMarkdown(text) {
 @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 
 .processing-bar { display: flex; align-items: center; gap: 10px; padding: 8px 0; color: var(--text-muted); font-size: 12px; }
+.process-summary { width: 100%; display: flex; align-items: center; gap: 8px; margin: 4px 0 14px; padding: 9px 12px; border: 1px solid #29364a; border-radius: 8px; color: #aebad0; background: #151c29; cursor: pointer; font-size: 11px; text-align: left; transition: border-color .18s ease, background .18s ease; }.process-summary:hover { border-color: #3c5f91; background: #192438; }.process-summary-dot { color: var(--success); font-weight: 800; }.process-summary-meta { margin-left: auto; color: #748198; }.process-summary-action { color: #78aaf4; font-weight: 650; }
 .processing-dots { display: flex; gap: 4px; }
 .processing-dots span { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); animation: bounce 1.4s infinite ease-in-out both; }
 .processing-dots span:nth-child(1) { animation-delay: -0.32s; }
@@ -1315,6 +1423,7 @@ function renderMarkdown(text) {
 
 /* 会话元数据操作使用同一组轻量弹窗，避免浏览器原生 prompt/confirm 打断工作流。 */
 .dialog-backdrop { position: fixed; z-index: 50; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(4,7,13,.68); backdrop-filter: blur(3px); }
+.process-drawer-backdrop { position: fixed; z-index: 60; inset: 0; display: flex; justify-content: flex-end; background: rgba(4,7,13,.52); backdrop-filter: blur(2px); }.process-drawer { width: min(460px, calc(100vw - 72px)); height: 100%; display: flex; flex-direction: column; border-left: 1px solid #344158; background: #131823; box-shadow: -18px 0 48px rgba(0,0,0,.34); }.process-drawer-header { height: 68px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; padding: 0 18px; border-bottom: 1px solid #2b3447; }.process-drawer-header h2 { margin: 3px 0 0; color: var(--text-primary); font-size: 17px; }.process-drawer-header button { width: 30px; height: 30px; border: 1px solid #344057; border-radius: 7px; color: #9aa8bd; background: transparent; cursor: pointer; font-size: 20px; line-height: 1; }.process-drawer-header button:hover { color: white; background: #242d3e; }.process-drawer-body { flex: 1; overflow-y: auto; padding: 13px 14px 22px; }.process-empty { padding: 30px 10px; color: var(--text-muted); font-size: 12px; text-align: center; }.process-entry { margin-bottom: 10px; overflow: hidden; border: 1px solid #293449; border-radius: 8px; background: #171e2b; }.process-entry-head { display: flex; justify-content: space-between; gap: 8px; padding: 8px 10px; border-bottom: 1px solid #293449; color: #c1ccdd; font-size: 11px; font-weight: 650; }.process-entry-head span:last-child { color: #6f7c91; font-weight: 500; }.process-entry-content { padding: 9px 10px; color: #aeb9cb; font-size: 11px; line-height: 1.6; }.drawer-round { padding: 8px 10px; border-bottom: 1px solid #252f42; }.drawer-round:last-child { border-bottom: 0; }.drawer-round-title { margin-bottom: 5px; color: #8796ad; font-size: 10px; font-weight: 700; }.drawer-trace-item { display: flex; align-items: flex-start; gap: 7px; padding: 3px 0; color: #aeb9cb; font-size: 11px; line-height: 1.45; }
 .conv-dialog { width: min(390px, calc(100vw - 32px)); padding: 22px; border: 1px solid #30394c; border-radius: 12px; background: #171c28; box-shadow: 0 24px 64px rgba(0,0,0,.42); }
 .conv-dialog h2 { margin: 5px 0 14px; color: var(--text-primary); font-size: 18px; }.conv-dialog p { margin: 10px 0 0; color: var(--text-muted); font-size: 12px; line-height: 1.55; }
 .conv-dialog input { box-sizing: border-box; width: 100%; padding: 10px 11px; border: 1px solid #34405a; border-radius: 7px; outline: none; color: var(--text-primary); background: #0f131c; font-size: 13px; }.conv-dialog input:focus { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,.15); }

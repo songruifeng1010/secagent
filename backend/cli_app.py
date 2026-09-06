@@ -208,7 +208,7 @@ def cmd_onboard(args: argparse.Namespace) -> int:
         activate_profile(profile, secret or store.get_secret(profile))
         print(f"已保存活动 Provider：{profile.profile_id} ({profile.label})")
 
-        print("\n配置完成。运行 secagentx 进入 CLI，或运行 secagentx dashboard 打开 Web 控制台。")
+        print("\n配置完成。运行 secagentx tui 进入专用终端，或运行 secagentx dashboard 打开 Web 控制台。")
         return 0
     except (ValueError, CredentialStoreError, OSError, RuntimeError) as exc:
         print(f"配置失败：{exc}", file=sys.stderr)
@@ -240,6 +240,24 @@ def cmd_chat(args: argparse.Namespace) -> int:
             return 2
     asyncio.run(_run_chat(args.query or "", args.json, args.conversation_id or ""))
     return 0
+
+
+def cmd_tui(args: argparse.Namespace) -> int:
+    """启动全屏终端；必要时可显式退回经典逐行模式。"""
+    if getattr(args, "classic", False):
+        args.query = ""
+        args.json = False
+        return cmd_chat(args)
+    if not ProviderProfileStore().active() and not _has_legacy_provider():
+        if sys.stdin.isatty():
+            result = cmd_onboard(_onboard_defaults())
+            if result:
+                return result
+        else:
+            print("尚未配置模型 Provider，请先运行 secagentx onboard。", file=sys.stderr)
+            return 2
+    from backend.interface.tui import run_tui
+    return run_tui(args.conversation_id or "")
 
 
 def _wait_and_open(url: str) -> None:
@@ -427,6 +445,9 @@ def build_parser() -> argparse.ArgumentParser:
     chat.add_argument("-q", "--query", default="")
     chat.add_argument("--json", action="store_true")
     chat.add_argument("--conv", "--conversation", dest="conversation_id", default="")
+    tui = sub.add_parser("tui", help="启动全屏专用终端对话界面")
+    tui.add_argument("--conv", "--conversation", dest="conversation_id", default="")
+    tui.add_argument("--classic", action="store_true", help="退回经典逐行终端")
     ask = sub.add_parser("ask", help="执行一次查询")
     ask.add_argument("query")
     ask.add_argument("--json", action="store_true")
@@ -470,6 +491,8 @@ def main(argv: Optional[list[str]] = None) -> int:
             return cmd_onboard(args)
         if args.command in ("chat", "ask"):
             return cmd_chat(args)
+        if args.command == "tui":
+            return cmd_tui(args)
         if args.command == "dashboard":
             return _serve(args, open_browser=True)
         if args.command == "serve":

@@ -529,12 +529,13 @@ class TrueReActLoop:
 
         knowledge_result = {
             "status": "completed",
-            "response_mode": "plain_text",
+            "response_mode": "knowledge_card",
             "conversation_id": conversation_id,
             "rounds": 1,
             "needs_human": False,
             "score": None,
             "is_knowledge": True,
+            "question": text,
             "summary_text": content or "（无内容）",
             "verdict": {},
             "summary_report": {
@@ -570,7 +571,7 @@ class TrueReActLoop:
             "tool_call_history": [],
             "structured_result": knowledge_result,
             "answer_mode": "rag",
-            "response_mode": "plain_text",
+            "response_mode": "knowledge_card",
             "score": None,
         }
 

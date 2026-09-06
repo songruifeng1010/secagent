@@ -142,6 +142,10 @@ class SecAgentCLI:
         self._json_mode = False  # --json 模式下抑制人类可读 stdout 输出
         self.console = Console(highlight=False, soft_wrap=True) if RICH_AVAILABLE else None
         self._terminal_input = None
+        # Full-screen TUI reuses the same conversation/orchestrator lifecycle but
+        # renders events itself. Classic CLI keeps these defaults unchanged.
+        self.render_enabled = True
+        self.event_handler = None
 
     # ═══════════════════ 终端渲染 ═══════════════════
 
@@ -243,7 +247,7 @@ class SecAgentCLI:
                         await mod.stop()
                 except Exception:
                     pass
-                if not self._json_mode:
+                if not self._json_mode and getattr(self, "render_enabled", True):
                     print(c(f"  [cli] 已停止 {name}", "yellow"))
 
     # ═══════════════════ 会话管理 ═══════════════════
@@ -256,14 +260,14 @@ class SecAgentCLI:
             # 恢复历史会话
             existing = await self.repo.get_conversation(self.conversation_id)
             if existing:
-                if not self._json_mode:
+                if not self._json_mode and getattr(self, "render_enabled", True):
                     print(c(f"  [cli] 恢复会话: {self.conversation_id}", "blue"))
                 messages = await self.repo.get_messages(self.conversation_id, limit=5)
-                if messages and not self._json_mode:
+                if messages and not self._json_mode and getattr(self, "render_enabled", True):
                     print(c(f"  [cli] 最近 {len(messages)} 条消息已加载", "blue"))
                 return
             else:
-                if not self._json_mode:
+                if not self._json_mode and getattr(self, "render_enabled", True):
                     print(c(f"  [cli] 会话 {self.conversation_id} 不存在，创建新会话", "yellow"))
 
         self.conversation_id = f"cli-{uuid.uuid4().hex[:8]}"
@@ -271,7 +275,7 @@ class SecAgentCLI:
             title=f"CLI对话 {self.conversation_id}",
             conversation_id=self.conversation_id,
         )
-        if not self._json_mode:
+        if not self._json_mode and getattr(self, "render_enabled", True):
             print(c(f"  [cli] 新会话: {self.conversation_id}", "green"))
 
     async def load_history(self) -> list[dict]:
@@ -315,7 +319,7 @@ class SecAgentCLI:
             agent_id="orchestrator",
         )
 
-        if not json_mode:
+        if not json_mode and getattr(self, "render_enabled", True):
             print(c(f"\n  {'═' * 50}", "blue"))
 
         stream_buffer = ""
@@ -352,7 +356,7 @@ class SecAgentCLI:
                 self._current_task.cancel()
                 with suppress(asyncio.CancelledError):
                     await self._current_task
-                if not json_mode:
+                if not json_mode and getattr(self, "render_enabled", True):
                     print(c(f"\n  [超时] 分析超过 {PROCESS_TIMEOUT_SECONDS}s，已取消", "red"))
                 assistant_content = "分析超时，请简化问题后重试"
             else:
@@ -367,15 +371,15 @@ class SecAgentCLI:
                     await self._current_task
             if asyncio.current_task().cancelling():
                 raise
-            if not json_mode:
+            if not json_mode and getattr(self, "render_enabled", True):
                 print("已取消当前分析，可以继续提问。")
             assistant_content = "本次分析已取消。"
         except asyncio.TimeoutError:
-            if not json_mode:
+            if not json_mode and getattr(self, "render_enabled", True):
                 print(c(f"\n  [超时] 分析超过 {PROCESS_TIMEOUT_SECONDS}s，已取消", "red"))
             assistant_content = "分析超时"
         except Exception as e:
-            if not json_mode:
+            if not json_mode and getattr(self, "render_enabled", True):
                 print(c(f"\n  [错误] {e}", "red"))
             assistant_content = f"分析异常: {e}"
         finally:
@@ -401,15 +405,24 @@ class SecAgentCLI:
             }
             _ORIG_STDOUT.write(json.dumps(_json_out, ensure_ascii=False) + "\n")
             _ORIG_STDOUT.flush()
-            return
+            return {
+                "answer": assistant_content,
+                "structured_result": final_structured,
+                "stats": total_stats,
+            }
 
         # 打印统计摘要
-        if total_stats:
+        if total_stats and getattr(self, "render_enabled", True):
             print()
             dur = total_stats.get("total_duration_ms", 0)
             tools = total_stats.get("total_tool_calls", 0)
             agents = total_stats.get("total_agent_calls", 0)
             print(c(f"  统计: {dur:.0f}ms | {tools} 工具调用 | {agents} Agent调用", "bold"))
+        return {
+            "answer": assistant_content,
+            "structured_result": final_structured,
+            "stats": total_stats,
+        }
 
     async def _consume_stream(self, stream, json_mode: bool = False) -> tuple:
         """只将回答事件写入正文，中间执行事件更新同一行状态。"""
@@ -419,7 +432,7 @@ class SecAgentCLI:
         structured = None
         response_mode = ""
         status = "正在分析 · Ctrl+C 取消"
-        spinner = Spinner("dots", text=status) if self._rich_mode and not json_mode else None
+        spinner = Spinner("dots", text=status) if self._rich_mode and not json_mode and getattr(self, "render_enabled", True) else None
         progress = Live(spinner, console=self.console, refresh_per_second=8, transient=True) if spinner else None
         if progress:
             progress.start()
@@ -432,6 +445,11 @@ class SecAgentCLI:
         }
         try:
             async for chunk in stream:
+                event_handler = getattr(self, "event_handler", None)
+                if event_handler is not None:
+                    callback_result = event_handler(chunk)
+                    if asyncio.iscoroutine(callback_result):
+                        await callback_result
                 kind = chunk.get("type", "")
                 if kind == "stream":
                     buffer += chunk.get("content") or ""
@@ -464,7 +482,7 @@ class SecAgentCLI:
             if progress:
                 progress.stop()
         answer = answer or buffer
-        if not json_mode:
+        if not json_mode and getattr(self, "render_enabled", True):
             self._render_answer(answer, response_mode)
         return buffer, answer, stats, structured
 

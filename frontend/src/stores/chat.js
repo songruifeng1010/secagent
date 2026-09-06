@@ -36,6 +36,26 @@ export const useChatStore = defineStore('chat', () => {
     })
   }
 
+  function addStructuredResult(content) {
+    // RAG 答案先以流式 agent 消息出现。完成后原位升级为知识卡片，
+    // 避免同一正文先显示纯文本、随后再重复显示一张卡片。
+    if (content?.response_mode === 'knowledge_card') {
+      for (let i = messages.value.length - 1; i >= 0; i--) {
+        const message = messages.value[i]
+        if (message.role === 'user') break
+        if (message.role === 'agent' && message.agentId === 'orch-001') {
+          messages.value[i] = {
+            ...message,
+            role: 'structured_result',
+            content: { ...content, summary_text: content.summary_text || message.content },
+          }
+          return
+        }
+      }
+    }
+    addMessage('structured_result', content)
+  }
+
   function upsertAgentStatus(agentId, agentName, status, durationMs = 0, tokens = 0) {
     const existing = agentStatusList.value.find(a => a.id === agentId)
     if (existing) {
@@ -325,9 +345,8 @@ export const useChatStore = defineStore('chat', () => {
       isProcessing.value = false
       activeAgents.value = {}
       const responseMode = data.response_mode || data.structured_result?.response_mode || ''
-      const plainText = responseMode === 'plain_text' || ['free', 'rag'].includes(data.answer_mode)
-      // 知识定义类问题保留为一条正文消息；结构化结果仍随事件传输，
-      // 便于审计/导出，但不在对话区渲染成风险卡片。
+      const plainText = responseMode === 'plain_text' || (!responseMode && data.answer_mode === 'free')
+      // 问候/闲聊保留自然文本；知识类结果由下方逻辑升级为轻量知识卡片。
       if (plainText || !data.structured_result) {
         const report = data.content || data.summary || ''
         if (report && !contentAlreadyShown(report)) {
@@ -337,7 +356,7 @@ export const useChatStore = defineStore('chat', () => {
       // 纯文本输出时只保留纯文本，不追加耗时提示（用户要求）
       // 结构化最终结果卡片（JSON-first）：顶层 verdict/score/agent_results
       if (data.structured_result && !plainText) {
-        addMessage('structured_result', data.structured_result)
+        addStructuredResult(data.structured_result)
       }
       // 确定性置信度裁决卡片（v2.2.2）：仅在未启用 Decision Fusion 时展示
       // （修复：融合裁决为唯一权威时，旧加权聚合的 90% 与融合 30% 同时显示会自相矛盾，
@@ -347,7 +366,7 @@ export const useChatStore = defineStore('chat', () => {
         addMessage('confidence_card', agg)
       }
       // 可解释风险评分卡（v2.3）：多严重、为什么，逐维度加减分
-      if (data.risk_scorecard) {
+      if (data.risk_scorecard && !['plain_text', 'knowledge_card', 'action_guide'].includes(responseMode)) {
         addMessage('risk_card', data.risk_scorecard)
       }
     }
@@ -356,7 +375,7 @@ export const useChatStore = defineStore('chat', () => {
       isProcessing.value = false
       activeAgents.value = {}
       const responseMode = data.response_mode || data.structured_result?.response_mode || ''
-      const plainText = responseMode === 'plain_text' || ['free', 'rag'].includes(data.answer_mode)
+      const plainText = responseMode === 'plain_text' || (!responseMode && data.answer_mode === 'free')
       if (plainText || !data.structured_result) {
         const summary = data.summary || data.content || ''
         if (summary && !contentAlreadyShown(summary)) {
@@ -366,13 +385,13 @@ export const useChatStore = defineStore('chat', () => {
       addMessage('system', ` 达到最大推理轮次`)
       // 结构化最终结果卡片（JSON-first）
       if (data.structured_result && !plainText) {
-        addMessage('structured_result', data.structured_result)
+        addStructuredResult(data.structured_result)
       }
       const agg = data.confidence_aggregate
       if (agg && (agg.details || []).length > 0 && !data.structured_result && !plainText) {
         addMessage('confidence_card', agg)
       }
-      if (data.risk_scorecard) {
+      if (data.risk_scorecard && !['plain_text', 'knowledge_card', 'action_guide'].includes(responseMode)) {
         addMessage('risk_card', data.risk_scorecard)
       }
     }
