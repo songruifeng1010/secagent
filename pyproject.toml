@@ -69,6 +69,12 @@ source = ["backend"]
 omit = [
     "*/__pycache__/*",
     "backend/storage/migrations/*",
+    # The default test environment intentionally excludes the optional ML
+    # training stack. Measure these modules in a dedicated ML environment
+    # instead of counting unimportable optional code as uncovered core code.
+    "backend/ml_model/pipeline.py",
+    "backend/ml_model/trainer.py",
+    "backend/tools/ml_detector.py",
 ]
 
 [tool.coverage.report]
